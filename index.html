@@ -440,41 +440,72 @@
     });
   }
 
-  // Scans OCR'd words for the token (or adjacent pair of tokens) that best
+  // Scans OCR'd words for the token (or combination of nearby tokens) that best
   // matches the shape of a Czech plate: a short alphanumeric block containing
-  // both letters and several digits, e.g. "6B9" + "4190" -> "6B9 4190".
+  // both letters and several digits, e.g. "6B9" + "4190" -> "6B94190".
+  // Tokens are grouped into text lines (by vertical position) so we don't
+  // accidentally merge the plate number with unrelated text below/above it,
+  // and combinations skip over stray tokens in between (e.g. inspection
+  // stickers/holograms sitting between the two halves of the plate).
   function findPlateCandidate(words){
-    const norm = (s)=> (s||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
-    const tokens = words.map(w=>({ text: norm(w.text), confidence: w.confidence||0 })).filter(t=>t.text.length>0);
+    const clean = s => (s||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
+    const toks = words.map(w=>({
+      text: clean(w.text),
+      confidence: w.confidence||0,
+      x0: w.bbox ? w.bbox.x0 : 0,
+      y0: w.bbox ? w.bbox.y0 : 0,
+      y1: w.bbox ? w.bbox.y1 : 0,
+    })).filter(t=>t.text.length>0);
+
+    if(toks.length===0) return {text:'',confidence:0};
+
+    const heights = toks.map(t=>t.y1-t.y0).filter(h=>h>0);
+    const medH = heights.length ? heights.slice().sort((a,b)=>a-b)[Math.floor(heights.length/2)] : 20;
+    const centerOf = (t)=> (t.y0+t.y1)/2;
+
+    const lines = [];
+    toks.forEach(t=>{
+      const c = centerOf(t);
+      let line = lines.find(l=> Math.abs(l.center - c) < medH*0.7);
+      if(line){ line.toks.push(t); line.center = (line.center*line.count + c)/(line.count+1); line.count++; }
+      else lines.push({center:c, toks:[t], count:1});
+    });
 
     function score(str){
       const digits = (str.match(/[0-9]/g)||[]).length;
       const letters = (str.match(/[A-Z]/g)||[]).length;
       if(digits===0 || letters===0) return -1;
-      if(str.length<5 || str.length>8) return -1;
+      if(str.length<5 || str.length>9) return -1;
       let s = digits*2 + letters;
       if(str.length===7 || str.length===8) s += 5;
       return s;
     }
 
-    let best = { text:'', score:-1, confidence:0 };
-
-    // Single tokens
-    tokens.forEach(t=>{
-      const sc = score(t.text);
-      if(sc > best.score) best = { text:t.text, score:sc, confidence:t.confidence };
-    });
-
-    // Adjacent pairs (plate split across two OCR words, e.g. "6B9" "4190")
-    for(let i=0;i<tokens.length-1;i++){
-      const combined = tokens[i].text + tokens[i+1].text;
-      const sc = score(combined);
-      if(sc > best.score){
-        best = { text: combined, score: sc, confidence: Math.min(tokens[i].confidence, tokens[i+1].confidence) };
-      }
+    function combos(arr, size){
+      const results = [];
+      (function helper(start, combo){
+        if(combo.length===size){ results.push(combo.slice()); return; }
+        for(let i=start;i<arr.length;i++){ combo.push(arr[i]); helper(i+1, combo); combo.pop(); }
+      })(0, []);
+      return results;
     }
 
-    return { text: best.text.slice(0,8), confidence: Math.round(best.confidence||0) };
+    let best = { text:'', score:-1, confidence:0 };
+
+    lines.forEach(line=>{
+      const sorted = line.toks.slice().sort((a,b)=>a.x0-b.x0);
+      for(let size=1; size<=Math.min(3, sorted.length); size++){
+        combos(sorted, size).forEach(group=>{
+          const combined = group.map(g=>g.text).join('');
+          const sc = score(combined);
+          if(sc > best.score){
+            best = { text: combined, score: sc, confidence: Math.min(...group.map(g=>g.confidence)) };
+          }
+        });
+      }
+    });
+
+    return { text: best.text.slice(0,9), confidence: Math.round(best.confidence||0) };
   }
 
   function formatPlateDisplay(code){
