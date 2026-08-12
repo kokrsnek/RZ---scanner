@@ -1,0 +1,996 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<title>SPZ Scanner</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=Inter:wght@400;500;600;700&family=Roboto+Mono:wght@500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<style>
+  :root{
+    --asphalt:#0A0C10;
+    --asphalt-2:#14171D;
+    --asphalt-3:#1D2129;
+    --plate-blue:#1650C0;
+    --plate-face:#F5F3E9;
+    --ink:#111214;
+    --amber:#FFB020;
+    --amber-dim:#7A5713;
+    --text:#ECEDEF;
+    --muted:#8B92A0;
+    --good:#33D399;
+    --bad:#FF6058;
+    --line:#262B33;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html,body{height:100%;}
+  body{
+    margin:0;
+    background:var(--asphalt);
+    color:var(--text);
+    font-family:'Inter',system-ui,sans-serif;
+    overflow:hidden;
+    overscroll-behavior:none;
+  }
+  #app{position:fixed; inset:0; display:flex; flex-direction:column;}
+
+  /* ---------- SCREEN: START ---------- */
+  .screen{position:absolute; inset:0; display:none; flex-direction:column;}
+  .screen.active{display:flex;}
+
+  #startScreen{align-items:center; justify-content:center; text-align:center; padding:32px;}
+  .eyebrow{
+    font-family:'Roboto Mono',monospace;
+    font-size:12px; letter-spacing:.18em; text-transform:uppercase;
+    color:var(--amber); margin-bottom:14px;
+  }
+  #startScreen h1{
+    font-family:'Oswald',sans-serif; font-weight:600; font-size:30px;
+    letter-spacing:.02em; margin:0 0 10px; text-transform:uppercase;
+  }
+  #startScreen p{color:var(--muted); font-size:14px; line-height:1.5; max-width:320px; margin:0 0 32px;}
+  .shutter-btn{
+    width:92px; height:92px; border-radius:50%;
+    background:radial-gradient(circle at 35% 30%, #FFC65B, var(--amber) 60%);
+    border:4px solid var(--asphalt-3);
+    box-shadow:0 0 0 3px var(--amber), 0 10px 30px rgba(255,176,32,.25);
+    display:flex; align-items:center; justify-content:center;
+    cursor:pointer; transition:transform .12s ease;
+  }
+  .shutter-btn:active{transform:scale(.93);}
+  .shutter-btn svg{width:34px; height:34px;}
+  .tap-label{margin-top:16px; font-size:13px; color:var(--muted); font-family:'Roboto Mono',monospace; letter-spacing:.05em;}
+  .fallback-link{margin-top:22px; font-size:12.5px; color:var(--amber); text-decoration:underline; cursor:pointer; background:none; border:none; font-family:inherit;}
+  #camError{margin-top:18px; font-size:12.5px; color:var(--bad); max-width:300px; line-height:1.5; display:none;}
+
+  /* ---------- SCREEN: CAMERA ---------- */
+  #cameraScreen{background:#000;}
+  #video{width:100%; height:100%; object-fit:cover;}
+  .cam-overlay{position:absolute; inset:0; display:flex; flex-direction:column; justify-content:space-between; pointer-events:none;}
+  .cam-top{display:flex; justify-content:space-between; align-items:flex-start; padding:calc(env(safe-area-inset-top,0px) + 16px) 18px 0;}
+  .cam-chip{
+    font-family:'Roboto Mono',monospace; font-size:11px; letter-spacing:.12em;
+    color:#fff; background:rgba(0,0,0,.45); padding:6px 12px; border-radius:20px;
+    text-transform:uppercase;
+  }
+  .cam-close{
+    pointer-events:all; width:34px; height:34px; border-radius:50%;
+    background:rgba(0,0,0,.45); border:none; color:#fff; font-size:18px;
+    display:flex; align-items:center; justify-content:center; cursor:pointer;
+  }
+  .cam-guide-wrap{flex:1; display:flex; align-items:center; justify-content:center;}
+  .cam-guide{
+    width:78%; max-width:420px; aspect-ratio:520/113;
+    position:relative;
+  }
+  .cam-guide .corner{position:absolute; width:26px; height:26px; border:3px solid var(--amber);}
+  .corner.tl{top:-3px; left:-3px; border-right:none; border-bottom:none;}
+  .corner.tr{top:-3px; right:-3px; border-left:none; border-bottom:none;}
+  .corner.bl{bottom:-3px; left:-3px; border-right:none; border-top:none;}
+  .corner.br{bottom:-3px; right:-3px; border-left:none; border-top:none;}
+  .cam-hint{
+    text-align:center; color:#fff; font-size:12.5px; margin-top:14px;
+    font-family:'Roboto Mono',monospace; letter-spacing:.04em; text-shadow:0 1px 4px rgba(0,0,0,.6);
+  }
+  .cam-bottom{display:flex; align-items:center; justify-content:center; padding:0 0 calc(env(safe-area-inset-bottom,0px) + 30px);}
+  .cam-bottom .shutter-btn{pointer-events:all;}
+
+  /* ---------- SCREEN: PROCESSING ---------- */
+  #processingScreen{align-items:center; justify-content:center; background:var(--asphalt);}
+  .spinner{width:46px; height:46px; border-radius:50%; border:3px solid var(--asphalt-3); border-top-color:var(--amber); animation:spin .8s linear infinite;}
+  @keyframes spin{to{transform:rotate(360deg);}}
+  #processingScreen p{margin-top:18px; color:var(--muted); font-family:'Roboto Mono',monospace; font-size:12.5px; letter-spacing:.08em; text-transform:uppercase;}
+
+  /* ---------- SCREEN: RESULT ---------- */
+  #resultScreen{overflow-y:auto; padding:calc(env(safe-area-inset-top,0px) + 20px) 20px calc(env(safe-area-inset-bottom,0px) + 24px);}
+  .result-header{display:flex; align-items:center; justify-content:space-between; margin-bottom:18px;}
+  .result-header h2{font-family:'Oswald',sans-serif; font-size:15px; letter-spacing:.1em; text-transform:uppercase; margin:0; color:var(--muted); font-weight:600;}
+  .thumb-wrap{border-radius:14px; overflow:hidden; border:1px solid var(--line); margin-bottom:22px; background:var(--asphalt-2);}
+  #thumb{width:100%; display:block; max-height:220px; object-fit:cover;}
+
+  /* Signature element: replica plate, tap-to-edit */
+  .plate{
+    display:flex; align-items:stretch;
+    background:var(--plate-face);
+    border-radius:8px;
+    border:2px solid #2b2b2b;
+    box-shadow:0 8px 24px rgba(0,0,0,.35), inset 0 0 0 1px rgba(255,255,255,.4);
+    overflow:hidden;
+    margin-bottom:8px;
+  }
+  .plate-strip{
+    width:34px; flex-shrink:0;
+    background:var(--plate-blue);
+    display:flex; flex-direction:column; align-items:center; justify-content:space-between;
+    padding:8px 0;
+  }
+  .plate-strip .stars{color:#FFCC00; font-size:9px; line-height:1.1; letter-spacing:1px; text-align:center;}
+  .plate-strip .cz{color:#fff; font-family:'Oswald',sans-serif; font-weight:600; font-size:11px; letter-spacing:.03em;}
+  .plate-input{
+    flex:1; border:none; background:transparent; color:var(--ink);
+    font-family:'Oswald',sans-serif; font-weight:600; font-size:clamp(28px,9vw,42px);
+    letter-spacing:.09em; text-align:center; text-transform:uppercase;
+    padding:6px 8px; width:100%; min-width:0;
+  }
+  .plate-input:focus{outline:none; background:rgba(22,80,192,.06);}
+  .plate-caption{font-size:11px; color:var(--muted); font-family:'Roboto Mono',monospace; letter-spacing:.06em; margin:0 2px 26px; text-transform:uppercase;}
+
+  .field-row{display:flex; gap:12px; margin-bottom:22px;}
+  .field{flex:1; background:var(--asphalt-2); border:1px solid var(--line); border-radius:12px; padding:10px 14px;}
+  .field label{display:block; font-size:10.5px; color:var(--muted); font-family:'Roboto Mono',monospace; letter-spacing:.08em; text-transform:uppercase; margin-bottom:4px;}
+  .field input{
+    width:100%; background:none; border:none; color:var(--text);
+    font-family:'Inter',sans-serif; font-weight:600; font-size:16px; padding:0;
+  }
+  .field input:focus{outline:none;}
+  .field input::-webkit-calendar-picker-indicator{filter:invert(0.6);}
+
+  .confidence{display:flex; align-items:center; gap:8px; margin:-8px 2px 24px; font-size:12px; color:var(--muted); font-family:'Roboto Mono',monospace;}
+  .dot{width:7px; height:7px; border-radius:50%;}
+
+  .btn-row{display:flex; gap:12px;}
+  .btn{
+    flex:1; border-radius:14px; padding:15px 12px; font-family:'Inter',sans-serif; font-weight:700;
+    font-size:14.5px; text-align:center; cursor:pointer; border:none; letter-spacing:.01em;
+  }
+  .btn-ghost{background:transparent; border:1.5px solid var(--line); color:var(--text);}
+  .btn-primary{background:var(--amber); color:#241a00;}
+  .btn:active{transform:scale(.97);}
+  .btn[disabled]{opacity:.5; pointer-events:none;}
+
+  .saved-note{margin-top:16px; text-align:center; font-size:12.5px; color:var(--good); font-family:'Roboto Mono',monospace; display:none;}
+
+  /* ---------- HISTORY ---------- */
+  #historyScreen{overflow-y:auto; padding:calc(env(safe-area-inset-top,0px) + 20px) 20px calc(env(safe-area-inset-bottom,0px) + 24px);}
+  .history-header{display:flex; align-items:center; gap:14px; margin-bottom:20px;}
+  .history-back{
+    width:34px; height:34px; border-radius:50%; border:1.5px solid var(--line); background:transparent;
+    color:var(--text); font-size:16px; display:flex; align-items:center; justify-content:center; cursor:pointer;
+  }
+  .history-header h2{font-family:'Oswald',sans-serif; font-weight:600; font-size:18px; letter-spacing:.04em; text-transform:uppercase; margin:0; color:var(--text);}
+  .history-empty{text-align:center; color:var(--muted); font-size:13.5px; margin-top:60px; line-height:1.6;}
+  .history-item{
+    display:flex; gap:12px; align-items:center; background:var(--asphalt-2); border:1px solid var(--line);
+    border-radius:14px; padding:10px; margin-bottom:12px; cursor:pointer;
+  }
+  .history-item:active{transform:scale(.98);}
+  .history-thumb{width:64px; height:64px; border-radius:8px; object-fit:cover; flex-shrink:0; background:#000;}
+  .history-info{flex:1; min-width:0;}
+  .history-plate{font-family:'Oswald',sans-serif; font-weight:600; font-size:17px; letter-spacing:.05em; color:var(--text);}
+  .history-meta{font-family:'Roboto Mono',monospace; font-size:11px; color:var(--muted); margin-top:3px; letter-spacing:.03em;}
+  .history-address{font-size:11.5px; color:var(--muted); margin-top:2px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .history-delete{
+    width:32px; height:32px; border-radius:50%; border:none; background:transparent; color:var(--bad);
+    font-size:15px; flex-shrink:0; display:flex; align-items:center; justify-content:center; cursor:pointer;
+  }
+
+  /* ---------- OFFENSE PICKER ---------- */
+  .offense-field{cursor:pointer;}
+  .offense-value{font-family:'Inter',sans-serif; font-weight:600; font-size:14.5px; color:var(--text); padding-top:2px; line-height:1.35;}
+  .offense-value.empty{color:var(--muted); font-weight:500;}
+  .offense-ref{font-family:'Roboto Mono',monospace; font-size:10.5px; color:var(--amber); margin-top:2px;}
+  .offense-clear{font-size:11px; color:var(--bad); font-family:'Roboto Mono',monospace; margin-top:8px; display:inline-block;}
+
+  #offenseScreen{overflow-y:auto; padding:calc(env(safe-area-inset-top,0px) + 20px) 20px calc(env(safe-area-inset-bottom,0px) + 24px);}
+  .offense-search{
+    width:100%; background:var(--asphalt-2); border:1.5px solid var(--line); border-radius:12px;
+    padding:13px 14px; color:var(--text); font-family:'Inter',sans-serif; font-size:15px; margin-bottom:18px;
+  }
+  .offense-search:focus{outline:none; border-color:var(--amber);}
+  .offense-group-title{
+    font-family:'Roboto Mono',monospace; font-size:11px; letter-spacing:.08em; text-transform:uppercase;
+    color:var(--amber); margin:20px 2px 8px;
+  }
+  .offense-item{
+    background:var(--asphalt-2); border:1px solid var(--line); border-radius:12px; padding:11px 14px;
+    margin-bottom:8px; cursor:pointer;
+  }
+  .offense-item:active{transform:scale(.98);}
+  .offense-item-label{font-size:14px; color:var(--text); line-height:1.35;}
+  .offense-item-ref{font-family:'Roboto Mono',monospace; font-size:10.5px; color:var(--muted); margin-top:3px;}
+  .offense-empty{text-align:center; color:var(--muted); font-size:13.5px; margin-top:40px;}
+  .offense-clear-item{
+    background:transparent; border:1px dashed var(--line); border-radius:12px; padding:11px 14px;
+    margin-bottom:16px; cursor:pointer; text-align:center; color:var(--bad); font-size:13px;
+  }
+
+  canvas{display:none;}
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- START -->
+  <div id="startScreen" class="screen active">
+    <div class="eyebrow">SPZ Scanner</div>
+    <h1>Vyfoťte&nbsp;značku</h1>
+    <p>Klepnutím spustíte fotoaparát, vyfotíte registrační značku a appka ji rovnou rozpozná a připraví jako PDF.</p>
+    <div class="shutter-btn" id="startBtn">
+      <svg viewBox="0 0 24 24" fill="none"><path d="M4 8a2 2 0 0 1 2-2h1.2a1 1 0 0 0 .87-.5l.66-1.15A2 2 0 0 1 10.46 3h3.08a2 2 0 0 1 1.73 1.35l.66 1.15a1 1 0 0 0 .87.5H18a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8Z" stroke="#241a00" stroke-width="1.8"/><circle cx="12" cy="13" r="3.4" stroke="#241a00" stroke-width="1.8"/></svg>
+    </div>
+    <div class="tap-label">KLEPNĚTE PRO SPUŠTĚNÍ</div>
+    <button class="fallback-link" id="fallbackLink">Kamera se nespouští? Použít fotoaparát telefonu</button>
+    <button class="fallback-link" id="apiKeyLink">⚙ Nastavit API klíč (Plate Recognizer)</button>
+    <button class="fallback-link" id="historyLink">📜 Historie záznamů</button>
+    <div id="camError"></div>
+  </div>
+
+  <!-- CAMERA -->
+  <div id="cameraScreen" class="screen">
+    <video id="video" autoplay playsinline muted></video>
+    <div class="cam-overlay">
+      <div class="cam-top">
+        <div class="cam-chip">Zaměřte značku</div>
+        <button class="cam-close" id="closeCamBtn" style="pointer-events:all;">✕</button>
+      </div>
+      <div class="cam-guide-wrap">
+        <div class="cam-guide">
+          <div class="corner tl"></div><div class="corner tr"></div>
+          <div class="corner bl"></div><div class="corner br"></div>
+        </div>
+      </div>
+      <div>
+        <div class="cam-hint">SROVNEJTE ZNAČKU DO RÁMEČKU</div>
+        <div class="cam-bottom">
+          <div class="shutter-btn" id="captureBtn">
+            <svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="7" fill="#241a00"/></svg>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- PROCESSING -->
+  <div id="processingScreen" class="screen">
+    <div class="spinner"></div>
+    <p id="processingLabel">Rozpoznávám značku…</p>
+  </div>
+
+  <!-- RESULT -->
+  <div id="resultScreen" class="screen">
+    <div class="result-header">
+      <h2>Rozpoznaný záznam</h2>
+      <button class="fallback-link" id="retakeLink" style="margin-top:0;">Přefotit</button>
+    </div>
+    <div class="thumb-wrap"><img id="thumb" alt="Fotka značky"></div>
+
+    <div class="plate">
+      <div class="plate-strip"><span class="stars">★★<br>★★</span><span class="cz">CZ</span></div>
+      <input id="plateInput" class="plate-input" maxlength="9" autocapitalize="characters" spellcheck="false">
+    </div>
+    <div class="plate-caption">Klepnutím upravíte značku</div>
+    <div class="confidence" id="confidenceRow"></div>
+
+    <div class="field-row">
+      <div class="field offense-field" id="offenseTrigger">
+        <label>Přestupek</label>
+        <div class="offense-value empty" id="offenseDisplay">Vyberte přestupek</div>
+        <span class="offense-ref" id="offenseRefDisplay" style="display:none;"></span>
+      </div>
+    </div>
+
+    <div class="field-row">
+      <div class="field">
+        <label>Datum</label>
+        <input type="date" id="dateInput">
+      </div>
+      <div class="field">
+        <label>Čas</label>
+        <input type="time" id="timeInput">
+      </div>
+    </div>
+
+    <div class="field-row">
+      <div class="field">
+        <label>Ulice</label>
+        <input type="text" id="addressInput" placeholder="Zjišťuji polohu…">
+      </div>
+    </div>
+
+    <div class="btn-row">
+      <button class="btn btn-ghost" id="newScanBtn">Nová fotka</button>
+      <button class="btn btn-primary" id="makePdfBtn">Vytvořit PDF</button>
+    </div>
+    <div class="saved-note" id="savedNote">✓ PDF staženo</div>
+  </div>
+
+  <!-- HISTORY -->
+  <div id="historyScreen" class="screen">
+    <div class="history-header">
+      <button class="history-back" id="historyBackBtn">←</button>
+      <h2>Historie záznamů</h2>
+    </div>
+    <div id="historyList"></div>
+  </div>
+
+  <!-- OFFENSE PICKER -->
+  <div id="offenseScreen" class="screen">
+    <div class="history-header">
+      <button class="history-back" id="offenseBackBtn">←</button>
+      <h2>Přestupek</h2>
+    </div>
+    <input type="text" id="offenseSearch" class="offense-search" placeholder="Hledat (např. rychlost, alkohol, zábor)…" autocomplete="off">
+    <div id="offenseList"></div>
+  </div>
+
+  <input type="file" id="fileFallback" accept="image/*" capture="environment" style="display:none;">
+  <canvas id="canvas"></canvas>
+</div>
+
+<script>
+(function(){
+  const screens = {
+    start: document.getElementById('startScreen'),
+    camera: document.getElementById('cameraScreen'),
+    processing: document.getElementById('processingScreen'),
+    result: document.getElementById('resultScreen'),
+    history: document.getElementById('historyScreen'),
+    offense: document.getElementById('offenseScreen'),
+  };
+  function show(name){
+    Object.values(screens).forEach(s=>s.classList.remove('active'));
+    screens[name].classList.add('active');
+  }
+
+  const video = document.getElementById('video');
+  const canvas = document.getElementById('canvas');
+  const ctx = canvas.getContext('2d');
+  const camError = document.getElementById('camError');
+  let stream = null;
+  let capturedDataUrl = null;
+
+  // ---------- Plate Recognizer API key (stored only on this device) ----------
+  const TOKEN_STORAGE_KEY = 'plateRecognizerToken';
+  function getApiToken(){
+    return (localStorage.getItem(TOKEN_STORAGE_KEY) || '').trim();
+  }
+  document.getElementById('apiKeyLink').addEventListener('click', ()=>{
+    const current = getApiToken();
+    const val = window.prompt('Vložte API token z platerecognizer.com (Account → API Key). Uloží se jen ve vašem telefonu, nikdy na GitHub:', current);
+    if(val !== null){
+      localStorage.setItem(TOKEN_STORAGE_KEY, val.trim());
+    }
+  });
+
+  // ---------- Camera lifecycle ----------
+  async function openCamera(){
+    camError.style.display = 'none';
+    try{
+      stream = await navigator.mediaDevices.getUserMedia({
+        video:{ facingMode:{ideal:'environment'}, width:{ideal:1920}, height:{ideal:1080} },
+        audio:false
+      });
+      video.srcObject = stream;
+      show('camera');
+    }catch(err){
+      // Live in-app camera blocked (common inside embedded webviews) — fall back
+      // to the native camera app immediately instead of leaving the UI stuck.
+      show('start');
+      camError.textContent = 'Živou kameru se nepodařilo spustit (' + err.message + '). Otevírám fotoaparát telefonu…';
+      camError.style.display = 'block';
+      fileFallback.click();
+    }
+  }
+  function closeCamera(){
+    if(stream){
+      stream.getTracks().forEach(t=>t.stop());
+      stream = null;
+    }
+  }
+
+  document.getElementById('startBtn').addEventListener('click', openCamera);
+  document.getElementById('closeCamBtn').addEventListener('click', ()=>{
+    closeCamera();
+    show('start');
+  });
+
+  // Fallback to native camera app (useful if getUserMedia is blocked in the embedding webview)
+  const fileFallback = document.getElementById('fileFallback');
+  document.getElementById('fallbackLink').addEventListener('click', ()=> fileFallback.click());
+  fileFallback.addEventListener('change', (e)=>{
+    const file = e.target.files[0];
+    if(!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev)=>{
+      const img = new Image();
+      img.onload = ()=>{
+        canvas.width = img.width; canvas.height = img.height;
+        ctx.drawImage(img,0,0);
+        finishCapture(canvas.toDataURL('image/jpeg',0.92));
+      };
+      img.src = ev.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
+
+  // ---------- Capture from live video, cropped to guide rectangle ----------
+  document.getElementById('captureBtn').addEventListener('click', ()=>{
+    const vw = video.videoWidth, vh = video.videoHeight;
+    if(!vw || !vh) return;
+
+    // Guide box is centered, width 78% of viewport (max 420px), aspect ratio 520:113
+    const guideEl = document.querySelector('.cam-guide');
+    const gRect = guideEl.getBoundingClientRect();
+    const vRect = video.getBoundingClientRect();
+
+    // video uses object-fit:cover -> compute the visible source rect mapping
+    const scale = Math.max(vRect.width / vw, vRect.height / vh);
+    const displayedW = vw * scale, displayedH = vh * scale;
+    const offsetX = (displayedW - vRect.width) / 2;
+    const offsetY = (displayedH - vRect.height) / 2;
+
+    function toSource(px, py){
+      return {
+        x: (px - vRect.left + offsetX) / scale,
+        y: (py - vRect.top + offsetY) / scale
+      };
+    }
+    const topLeft = toSource(gRect.left, gRect.top);
+    const bottomRight = toSource(gRect.right, gRect.bottom);
+    const cropX = Math.max(0, topLeft.x);
+    const cropY = Math.max(0, topLeft.y);
+    const cropW = Math.min(vw, bottomRight.x) - cropX;
+    const cropH = Math.min(vh, bottomRight.y) - cropY;
+
+    // Full-frame photo (for the record / PDF)
+    canvas.width = vw; canvas.height = vh;
+    ctx.drawImage(video, 0, 0, vw, vh);
+    const fullShot = canvas.toDataURL('image/jpeg', 0.9);
+
+    // Cropped plate region (for OCR accuracy)
+    const cropCanvas = document.createElement('canvas');
+    cropCanvas.width = Math.max(1, cropW);
+    cropCanvas.height = Math.max(1, cropH);
+    cropCanvas.getContext('2d').drawImage(video, cropX, cropY, cropW, cropH, 0, 0, cropCanvas.width, cropCanvas.height);
+
+    closeCamera();
+    finishCapture(fullShot, cropCanvas);
+  });
+
+  document.getElementById('retakeLink').addEventListener('click', openCamera);
+  document.getElementById('newScanBtn').addEventListener('click', openCamera);
+
+  // ---------- OCR + result ----------
+  async function finishCapture(fullShotDataUrl, cropCanvasEl){
+    capturedDataUrl = fullShotDataUrl;
+    document.getElementById('thumb').src = fullShotDataUrl;
+    show('processing');
+
+    let recognizedText = '';
+    let confidence = 0;
+    let ocrErrorMessage = null;
+    const token = getApiToken();
+
+    const platePromise = (async ()=>{
+      if(!token){
+        ocrErrorMessage = 'Chybí API klíč pro rozpoznávání. Nastavte ho přes „⚙ Nastavit API klíč" na úvodní obrazovce.';
+        return;
+      }
+      try{
+        const result = await recognizeViaPlateRecognizer(fullShotDataUrl, token);
+        recognizedText = cleanPlate(result.text);
+        confidence = result.confidence;
+      }catch(err){
+        ocrErrorMessage = (err && err.message) ? err.message : String(err);
+        console.error('Plate Recognizer failed:', err);
+      }
+    })();
+
+    // Runs in parallel with plate recognition — no reason to make the person
+    // wait twice for two separate network round-trips.
+    const locationPromise = getLocationAndAddress();
+
+    const [, location] = await Promise.all([platePromise, locationPromise]);
+
+    populateResult(recognizedText, confidence, ocrErrorMessage, location);
+    show('result');
+  }
+
+  // ---------- Location ----------
+  // A phone's very first GPS fix after the app opens is often coarse
+  // (Wi-Fi/cell-based, sometimes 100m+ off) before it locks onto satellites.
+  // Watch for a few seconds and keep whichever reading has the best accuracy,
+  // stopping early once we get a genuinely tight fix.
+  function getBestPosition(timeoutMs){
+    return new Promise((resolve)=>{
+      if(!navigator.geolocation){ resolve(null); return; }
+      let best = null;
+      let watchId = null;
+      let settled = false;
+      const finish = ()=>{
+        if(settled) return;
+        settled = true;
+        if(watchId !== null) navigator.geolocation.clearWatch(watchId);
+        resolve(best);
+      };
+      const timer = setTimeout(finish, timeoutMs);
+      watchId = navigator.geolocation.watchPosition(
+        pos => {
+          const acc = pos.coords.accuracy;
+          if(!best || acc < best.accuracy){
+            best = { lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: acc };
+          }
+          if(acc <= 20){ clearTimeout(timer); finish(); }
+        },
+        () => { clearTimeout(timer); finish(); },
+        { enableHighAccuracy: true, maximumAge: 0, timeout: timeoutMs }
+      );
+    });
+  }
+
+  async function reverseGeocode(lat, lng){
+    try{
+      const res = await fetch(
+        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=17&addressdetails=1`,
+        { headers: { 'Accept-Language': 'cs' } }
+      );
+      if(!res.ok) return '';
+      const json = await res.json();
+      const a = json.address || {};
+      const street = a.road || a.pedestrian || a.footway || a.residential || '';
+      const place = a.city || a.town || a.village || a.municipality || a.suburb || '';
+      const combined = [street, place].filter(Boolean).join(', ');
+      return combined || json.display_name || '';
+    }catch(e){
+      return '';
+    }
+  }
+
+  async function getLocationAndAddress(){
+    const pos = await getBestPosition(8000);
+    if(!pos) return { address: '' };
+    const address = await reverseGeocode(pos.lat, pos.lng);
+    return { address };
+  }
+
+  // Sends the photo to Plate Recognizer's ALPR API (specialized model trained
+  // on real-world license plates — far more accurate than generic OCR for
+  // this specific job) and returns its best guess.
+  async function recognizeViaPlateRecognizer(dataUrl, token){
+    const blob = await (await fetch(dataUrl)).blob();
+    const formData = new FormData();
+    formData.append('upload', blob, 'plate.jpg');
+    formData.append('regions', 'cz');
+
+    const res = await fetch('https://api.platerecognizer.com/v1/plate-reader/', {
+      method: 'POST',
+      headers: { 'Authorization': 'Token ' + token },
+      body: formData
+    });
+
+    if(!res.ok){
+      const errText = await res.text().catch(()=> '');
+      throw new Error('Plate Recognizer HTTP ' + res.status + (errText ? ': ' + errText : ''));
+    }
+
+    const json = await res.json();
+    if(json.results && json.results.length){
+      const best = json.results.slice().sort((a,b)=> (b.score||0) - (a.score||0))[0];
+      return { text: (best.plate||'').toUpperCase(), confidence: Math.round((best.score||0) * 100) };
+    }
+    return { text: '', confidence: 0 };
+  }
+
+  function cleanPlate(raw){
+    const cleaned = (raw||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
+    return cleaned.slice(0,9);
+  }
+
+  function formatPlateDisplay(code){
+    // Common CZ format is 3 chars + space + 4 chars, e.g. "1AB 2345" — used only for display spacing
+    if(code.length >= 6){
+      return code.slice(0, code.length-4) + ' ' + code.slice(-4);
+    }
+    return code;
+  }
+
+  function populateResult(text, confidence, ocrErrorMessage, location){
+    document.getElementById('plateInput').value = formatPlateDisplay(text);
+    const now = new Date();
+    document.getElementById('dateInput').value = now.toISOString().slice(0,10);
+    document.getElementById('timeInput').value = now.toTimeString().slice(0,5);
+
+    selectedOffense = null;
+    updateOffenseDisplay();
+
+    const addressInput = document.getElementById('addressInput');
+    if(location && location.address){
+      addressInput.value = location.address;
+    } else {
+      addressInput.value = '';
+      addressInput.placeholder = 'Ulici se nepodařilo dohledat, zadejte ručně';
+    }
+
+    const row = document.getElementById('confidenceRow');
+    row.innerHTML = '';
+    if(text){
+      const dot = document.createElement('span');
+      dot.className = 'dot';
+      dot.style.background = confidence >= 65 ? 'var(--good)' : (confidence >= 35 ? 'var(--amber)' : 'var(--bad)');
+      row.appendChild(dot);
+      const label = document.createElement('span');
+      label.textContent = 'Jistota rozpoznání: ' + confidence + '%  ·  zkontrolujte a případně upravte';
+      row.appendChild(label);
+    } else if(ocrErrorMessage){
+      row.innerHTML = '<span style="color:var(--bad)">Rozpoznávání selhalo (' + ocrErrorMessage + '). Zkontrolujte API klíč a internetové připojení, nebo zadejte značku ručně.</span>';
+    } else {
+      row.innerHTML = '<span style="color:var(--bad)">Značku se nepodařilo rozpoznat — zadejte ručně</span>';
+    }
+    document.getElementById('savedNote').style.display = 'none';
+  }
+
+  // ---------- PDF export ----------
+  document.getElementById('makePdfBtn').addEventListener('click', ()=>{
+    const { jsPDF } = window.jspdf;
+    const plate = document.getElementById('plateInput').value.trim() || 'NEZNÁMÁ SPZ';
+    const date = document.getElementById('dateInput').value;
+    const time = document.getElementById('timeInput').value;
+    const address = document.getElementById('addressInput').value.trim();
+
+    const doc = new jsPDF({ unit:'mm', format:'a4' });
+    const pageW = doc.internal.pageSize.getWidth();
+
+    doc.setFont('helvetica','bold');
+    doc.setFontSize(18);
+    doc.text('Záznam registrační značky', pageW/2, 20, {align:'center'});
+
+    doc.setDrawColor(20,20,20);
+    doc.setLineWidth(0.6);
+    doc.roundedRect(pageW/2 - 45, 30, 90, 24, 3, 3);
+    doc.setFontSize(22);
+    doc.setFont('helvetica','bold');
+    doc.text(plate, pageW/2, 46, {align:'center'});
+
+    doc.setFont('helvetica','normal');
+    doc.setFontSize(12);
+    doc.text('Datum: ' + (date || '—'), pageW/2 - 45, 66);
+    doc.text('Čas: ' + (time || '—'), pageW/2 + 5, 66);
+
+    let cursorY = 74;
+    if(selectedOffense){
+      doc.setFontSize(10.5);
+      doc.setFont('helvetica','bold');
+      doc.setTextColor(30);
+      const offenseLine = selectedOffense.label;
+      const wrappedOffense = doc.splitTextToSize(offenseLine, pageW - 40);
+      doc.text(wrappedOffense, pageW/2, cursorY, {align:'center'});
+      cursorY += wrappedOffense.length * 5;
+      doc.setFont('helvetica','normal');
+      doc.setFontSize(9);
+      doc.setTextColor(120);
+      doc.text(selectedOffense.ref + ' (zákon č. ' + selectedOffense.group.split(' — ')[0] + ')', pageW/2, cursorY, {align:'center'});
+      cursorY += 8;
+      doc.setTextColor(0);
+    }
+
+    let photoY = cursorY + 4;
+    if(address){
+      doc.setFontSize(10);
+      doc.setTextColor(90);
+      const wrapped = doc.splitTextToSize(address, pageW - 40);
+      doc.text(wrapped, pageW/2, cursorY, {align:'center'});
+      photoY = cursorY + wrapped.length * 5 + 4;
+      doc.setTextColor(0);
+    }
+
+    if(capturedDataUrl){
+      const imgW = pageW - 40;
+      const imgH = imgW * 0.62;
+      doc.addImage(capturedDataUrl, 'JPEG', 20, photoY, imgW, imgH);
+    }
+
+    doc.setFontSize(9);
+    doc.setTextColor(140);
+    doc.text('Vygenerováno aplikací SPZ Scanner', pageW/2, 285, {align:'center'});
+
+    doc.save('SPZ_' + plate.replace(/\s/g,'') + '_' + (date||'') + '.pdf');
+    const note = document.getElementById('savedNote');
+    note.style.display = 'block';
+
+    saveCurrentToHistory({ plate, date, time, address, offense: selectedOffense });
+  });
+
+  // ---------- History ----------
+  const HISTORY_KEY = 'spzHistory';
+  const HISTORY_LIMIT = 200;
+
+  function loadHistory(){
+    try{ return JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]'); }
+    catch(e){ return []; }
+  }
+  function saveHistoryList(list){
+    try{ localStorage.setItem(HISTORY_KEY, JSON.stringify(list)); }
+    catch(e){ console.error('Nepodařilo se uložit historii (možná plné úložiště):', e); }
+  }
+
+  // Shrinks the full-resolution photo down before it goes into history, so
+  // dozens of saved records don't fill up the phone's local storage quota.
+  function makeThumbnail(dataUrl, maxW){
+    return new Promise((resolve)=>{
+      const img = new Image();
+      img.onload = ()=>{
+        const scale = Math.min(1, maxW / img.width);
+        const c = document.createElement('canvas');
+        c.width = Math.max(1, Math.round(img.width * scale));
+        c.height = Math.max(1, Math.round(img.height * scale));
+        c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+        resolve(c.toDataURL('image/jpeg', 0.6));
+      };
+      img.onerror = ()=> resolve(dataUrl);
+      img.src = dataUrl;
+    });
+  }
+
+  async function saveCurrentToHistory({ plate, date, time, address, offense }){
+    const thumb = capturedDataUrl ? await makeThumbnail(capturedDataUrl, 320) : '';
+    const entry = {
+      id: Date.now().toString(36) + Math.random().toString(36).slice(2,7),
+      plate, date, time, address, offense: offense || null, thumb,
+      createdAt: new Date().toISOString()
+    };
+    const list = loadHistory();
+    list.unshift(entry);
+    if(list.length > HISTORY_LIMIT) list.length = HISTORY_LIMIT;
+    saveHistoryList(list);
+  }
+
+  function renderHistory(){
+    const list = loadHistory();
+    const container = document.getElementById('historyList');
+    container.innerHTML = '';
+
+    if(list.length === 0){
+      container.innerHTML = '<div class="history-empty">Zatím žádné uložené záznamy.<br>Objeví se tu po vytvoření PDF.</div>';
+      return;
+    }
+
+    list.forEach(entry=>{
+      const item = document.createElement('div');
+      item.className = 'history-item';
+
+      const img = document.createElement('img');
+      img.className = 'history-thumb';
+      img.src = entry.thumb || '';
+      img.alt = entry.plate || 'SPZ';
+      item.appendChild(img);
+
+      const info = document.createElement('div');
+      info.className = 'history-info';
+      const plateEl = document.createElement('div');
+      plateEl.className = 'history-plate';
+      plateEl.textContent = entry.plate || '(bez SPZ)';
+      info.appendChild(plateEl);
+      const metaEl = document.createElement('div');
+      metaEl.className = 'history-meta';
+      metaEl.textContent = [entry.date, entry.time].filter(Boolean).join(' · ');
+      info.appendChild(metaEl);
+      if(entry.offense){
+        const offEl = document.createElement('div');
+        offEl.className = 'history-address';
+        offEl.style.color = 'var(--amber)';
+        offEl.textContent = entry.offense.label;
+        info.appendChild(offEl);
+      }
+      if(entry.address){
+        const addrEl = document.createElement('div');
+        addrEl.className = 'history-address';
+        addrEl.textContent = entry.address;
+        info.appendChild(addrEl);
+      }
+      item.appendChild(info);
+
+      const delBtn = document.createElement('button');
+      delBtn.className = 'history-delete';
+      delBtn.textContent = '🗑';
+      delBtn.addEventListener('click', (e)=>{
+        e.stopPropagation();
+        if(window.confirm('Smazat tento záznam z historie?')){
+          const remaining = loadHistory().filter(x=>x.id!==entry.id);
+          saveHistoryList(remaining);
+          renderHistory();
+        }
+      });
+      item.appendChild(delBtn);
+
+      item.addEventListener('click', ()=> loadFromHistory(entry));
+      container.appendChild(item);
+    });
+  }
+
+  function loadFromHistory(entry){
+    capturedDataUrl = entry.thumb || '';
+    document.getElementById('thumb').src = entry.thumb || '';
+    document.getElementById('plateInput').value = entry.plate || '';
+    document.getElementById('dateInput').value = entry.date || '';
+    document.getElementById('timeInput').value = entry.time || '';
+    document.getElementById('addressInput').value = entry.address || '';
+
+    selectedOffense = entry.offense || null;
+    updateOffenseDisplay();
+
+    const row = document.getElementById('confidenceRow');
+    row.innerHTML = '<span style="color:var(--muted)">Načteno z historie · fotka je jen v náhledové kvalitě</span>';
+    document.getElementById('savedNote').style.display = 'none';
+
+    show('result');
+  }
+
+  document.getElementById('historyLink').addEventListener('click', ()=>{
+    renderHistory();
+    show('history');
+  });
+  document.getElementById('historyBackBtn').addEventListener('click', ()=> show('start'));
+
+  // ---------- Offense picker ----------
+  // Compiled from the current consolidated wording of § 125c odst. 1 zákona
+  // č. 361/2000 Sb. (o silničním provozu) and § 5 odst. 1 zákona č. 251/2016 Sb.
+  // (o některých přestupcích). This is a practical quick-reference list, not
+  // an authoritative legal citation — for anything requiring legal certainty,
+  // verify current wording (e.g. on zakonyprolidi.cz) before relying on it.
+  const OFFENSES = [
+    // Zákon č. 361/2000 Sb. — přestupky řidiče, § 125c odst. 1
+    { group:'361/2000 Sb. — přestupky řidiče', ref:'§ 125c odst. 1 písm. a) bod 1', label:'Řízení vozidla bez tabulky RZ nebo s nepřidělenou RZ' },
+    { group:'361/2000 Sb. — přestupky řidiče', ref:'§ 125c odst. 1 písm. a) bod 2', label:'Řízení se zakrytou nebo nečitelnou RZ' },
+    { group:'361/2000 Sb. — přestupky řidiče', ref:'§ 125c odst. 1 písm. a) bod 3', label:'Řízení technicky nezpůsobilého vozidla (nebezpečná závada)' },
+    { group:'361/2000 Sb. — přestupky řidiče', ref:'§ 125c odst. 1 písm. a) bod 4', label:'Řízení vozidla se zadrženým osvědčením o registraci' },
+    { group:'361/2000 Sb. — přestupky řidiče', ref:'§ 125c odst. 1 písm. b)', label:'Nezajetí k technické silniční kontrole / neuposlechnutí pokynů' },
+    { group:'361/2000 Sb. — přestupky řidiče', ref:'§ 125c odst. 1 písm. c)', label:'Řízení pod vlivem alkoholu nebo jiné návykové látky' },
+    { group:'361/2000 Sb. — přestupky řidiče', ref:'§ 125c odst. 1 písm. d)', label:'Odmítnutí dechové zkoušky / vyšetření na alkohol či drogy' },
+    { group:'361/2000 Sb. — přestupky řidiče', ref:'§ 125c odst. 1 písm. e) bod 1', label:'Řízení bez řidičského oprávnění' },
+    { group:'361/2000 Sb. — přestupky řidiče', ref:'§ 125c odst. 1 písm. e) bod 2', label:'Řízení se zadrženým řidičským průkazem' },
+    { group:'361/2000 Sb. — přestupky řidiče', ref:'§ 125c odst. 1 písm. e) bod 3', label:'Řízení bez profesní způsobilosti' },
+    { group:'361/2000 Sb. — přestupky řidiče', ref:'§ 125c odst. 1 písm. e) bod 4', label:'Řízení v době zákazu činnosti / bez práva k řízení v ČR' },
+    { group:'361/2000 Sb. — přestupky řidiče', ref:'§ 125c odst. 1 písm. e) bod 5', label:'Řízení s pozastaveným řidičským oprávněním' },
+    { group:'361/2000 Sb. — přestupky řidiče', ref:'§ 125c odst. 1 písm. e) bod 6', label:'Řízení bez doprovodu mentora' },
+    { group:'361/2000 Sb. — přestupky řidiče', ref:'§ 125c odst. 1 písm. f) bod 1', label:'Držení telefonu nebo jiného přístroje při řízení' },
+    { group:'361/2000 Sb. — přestupky řidiče', ref:'§ 125c odst. 1 písm. f) bod 2', label:'Překročení rychlosti v obci o 40+ km/h nebo mimo obec o 50+ km/h' },
+    { group:'361/2000 Sb. — přestupky řidiče', ref:'§ 125c odst. 1 písm. f) bod 3', label:'Překročení rychlosti v obci o 20–40 km/h nebo mimo obec o 30–50 km/h' },
+    { group:'361/2000 Sb. — přestupky řidiče', ref:'§ 125c odst. 1 písm. f) bod 4', label:'Překročení rychlosti o 10+ km/h' },
+    { group:'361/2000 Sb. — přestupky řidiče', ref:'§ 125c odst. 1 písm. f) bod 5', label:'Nezastavení na signál nebo pokyn k zastavení vozidla' },
+    { group:'361/2000 Sb. — přestupky řidiče', ref:'§ 125c odst. 1 písm. f) bod 6', label:'Ohrožení / neumožnění přejití chodci na přechodu' },
+    { group:'361/2000 Sb. — přestupky řidiče', ref:'§ 125c odst. 1 písm. f) bod 7', label:'Zakázané předjíždění' },
+    { group:'361/2000 Sb. — přestupky řidiče', ref:'§ 125c odst. 1 písm. f) bod 8', label:'Nedání přednosti v jízdě' },
+    { group:'361/2000 Sb. — přestupky řidiče', ref:'§ 125c odst. 1 písm. f) bod 9', label:'Vjetí na železniční přejezd v rozporu se zákazem' },
+    { group:'361/2000 Sb. — přestupky řidiče', ref:'§ 125c odst. 1 písm. f) bod 10', label:'Jízda v protisměru nebo zakázané otáčení na dálnici' },
+    { group:'361/2000 Sb. — přestupky řidiče', ref:'§ 125c odst. 1 písm. f) bod 11', label:'Zneužití parkovacího průkazu pro osoby se zdravotním postižením' },
+    { group:'361/2000 Sb. — přestupky řidiče', ref:'§ 125c odst. 1 písm. f) bod 12', label:'Nepřipoutání bezpečnostním pásem / chybějící dětská autosedačka' },
+    { group:'361/2000 Sb. — přestupky řidiče', ref:'§ 125c odst. 1 písm. f) bod 13', label:'Chybějící ochranná přilba na motocyklu nebo mopedu' },
+    { group:'361/2000 Sb. — přestupky řidiče', ref:'§ 125c odst. 1 písm. f) bod 14', label:'Ohrožení řidiče při přejíždění mezi jízdními pruhy' },
+    { group:'361/2000 Sb. — přestupky řidiče', ref:'§ 125c odst. 1 písm. f) bod 15', label:'Neuposlechnutí zákazu jízdy / příkazu směru jízdy' },
+    { group:'361/2000 Sb. — přestupky řidiče', ref:'§ 125c odst. 1 písm. f) bod 16', label:'Porušení omezení jízdy některých vozidel' },
+    { group:'361/2000 Sb. — přestupky řidiče', ref:'§ 125c odst. 1 písm. f) bod 17', label:'Zastavení nebo stání a způsobení překážky provozu' },
+    { group:'361/2000 Sb. — přestupky řidiče', ref:'§ 125c odst. 1 písm. f) bod 18', label:'Ohrožení řidiče při odbočování na křižovatce' },
+    { group:'361/2000 Sb. — přestupky řidiče', ref:'§ 125c odst. 1 písm. f) bod 19', label:'Porušení zákazu vjezdu (nákladní vozidlo/souprava nad 12 t)' },
+    { group:'361/2000 Sb. — přestupky řidiče', ref:'§ 125c odst. 1 písm. g)', label:'Nepřipoutaný spolujezdec / spolujezdec bez přilby' },
+    { group:'361/2000 Sb. — přestupky řidiče', ref:'§ 125c odst. 1 písm. h) bod 1', label:'Mentor nesedí vedle řidiče / nesleduje provoz' },
+    { group:'361/2000 Sb. — přestupky řidiče', ref:'§ 125c odst. 1 písm. h) bod 2', label:'Mentor pod vlivem alkoholu nebo návykové látky' },
+    { group:'361/2000 Sb. — přestupky řidiče', ref:'§ 125c odst. 1 písm. h) bod 3', label:'Mentor odmítne dechovou zkoušku' },
+    { group:'361/2000 Sb. — přestupky řidiče', ref:'§ 125c odst. 1 písm. i) bod 1', label:'Nezastavení vozidla po dopravní nehodě' },
+    { group:'361/2000 Sb. — přestupky řidiče', ref:'§ 125c odst. 1 písm. i) bod 2', label:'Neoznámení dopravní nehody policii' },
+    { group:'361/2000 Sb. — přestupky řidiče', ref:'§ 125c odst. 1 písm. i) bod 3', label:'Neprokázání totožnosti ostatním účastníkům nehody' },
+    { group:'361/2000 Sb. — přestupky řidiče', ref:'§ 125c odst. 1 písm. i) bod 4', label:'Opuštění místa dopravní nehody' },
+    { group:'361/2000 Sb. — přestupky řidiče', ref:'§ 125c odst. 1 písm. j)', label:'Použití antiradaru / neoprávněné výstražné světlo či zvuk' },
+    { group:'361/2000 Sb. — přestupky řidiče', ref:'§ 125c odst. 1 písm. k)', label:'Jiné porušení pravidel silničního provozu' },
+
+    // Zákon č. 251/2016 Sb. — přestupky proti veřejnému pořádku, § 5 odst. 1
+    { group:'251/2016 Sb. — veřejný pořádek', ref:'§ 5 odst. 1 písm. a)', label:'Neuposlechnutí výzvy úřední osoby při výkonu pravomoci' },
+    { group:'251/2016 Sb. — veřejný pořádek', ref:'§ 5 odst. 1 písm. b)', label:'Znevážení postavení úřední osoby při výkonu pravomoci' },
+    { group:'251/2016 Sb. — veřejný pořádek', ref:'§ 5 odst. 1 písm. c)', label:'Maření vykázání ze společného obydlí' },
+    { group:'251/2016 Sb. — veřejný pořádek', ref:'§ 5 odst. 1 písm. d)', label:'Porušení nočního klidu' },
+    { group:'251/2016 Sb. — veřejný pořádek', ref:'§ 5 odst. 1 písm. e)', label:'Vzbuzení veřejného pohoršení' },
+    { group:'251/2016 Sb. — veřejný pořádek', ref:'§ 5 odst. 1 písm. f)', label:'Znečištění veřejného prostranství / zanedbání úklidu' },
+    { group:'251/2016 Sb. — veřejný pořádek', ref:'§ 5 odst. 1 písm. g)', label:'Poškození nebo neoprávněný zábor veřejného prostranství' },
+    { group:'251/2016 Sb. — veřejný pořádek', ref:'§ 5 odst. 1 písm. h)', label:'Poškození nebo odstranění turistické značky / orientačního označení' },
+    { group:'251/2016 Sb. — veřejný pořádek', ref:'§ 5 odst. 1 písm. i)', label:'Porušení podmínek ochrany veřejného pořádku při akcích' },
+    { group:'251/2016 Sb. — veřejný pořádek', ref:'§ 5 odst. 1 písm. j)', label:'Zakrytý obličej na sportovním utkání' },
+    { group:'251/2016 Sb. — veřejný pořádek', ref:'§ 5 odst. 1 písm. k)', label:'Vnesení nebo použití pyrotechniky na sportovním utkání' },
+  ];
+
+  let selectedOffense = null;
+
+  function normalizeSearch(s){
+    return (s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  }
+
+  function renderOffenseList(filterText){
+    const container = document.getElementById('offenseList');
+    container.innerHTML = '';
+
+    const clearItem = document.createElement('div');
+    clearItem.className = 'offense-clear-item';
+    clearItem.textContent = '✕ Bez přestupku / vymazat výběr';
+    clearItem.addEventListener('click', ()=>{
+      selectedOffense = null;
+      updateOffenseDisplay();
+      show('result');
+    });
+    container.appendChild(clearItem);
+
+    const q = normalizeSearch(filterText);
+    const matches = OFFENSES.filter(o =>
+      !q || normalizeSearch(o.label).includes(q) || normalizeSearch(o.ref).includes(q) || normalizeSearch(o.group).includes(q)
+    );
+
+    if(matches.length === 0){
+      container.innerHTML += '<div class="offense-empty">Žádná shoda — zkuste jiné slovo.</div>';
+      return;
+    }
+
+    let lastGroup = null;
+    matches.forEach(o=>{
+      if(o.group !== lastGroup){
+        const h = document.createElement('div');
+        h.className = 'offense-group-title';
+        h.textContent = o.group;
+        container.appendChild(h);
+        lastGroup = o.group;
+      }
+      const item = document.createElement('div');
+      item.className = 'offense-item';
+      const lbl = document.createElement('div');
+      lbl.className = 'offense-item-label';
+      lbl.textContent = o.label;
+      item.appendChild(lbl);
+      const ref = document.createElement('div');
+      ref.className = 'offense-item-ref';
+      ref.textContent = o.ref;
+      item.appendChild(ref);
+      item.addEventListener('click', ()=>{
+        selectedOffense = o;
+        updateOffenseDisplay();
+        show('result');
+      });
+      container.appendChild(item);
+    });
+  }
+
+  function updateOffenseDisplay(){
+    const display = document.getElementById('offenseDisplay');
+    const refDisplay = document.getElementById('offenseRefDisplay');
+    if(selectedOffense){
+      display.textContent = selectedOffense.label;
+      display.classList.remove('empty');
+      refDisplay.textContent = selectedOffense.ref + '  ·  zákon č. ' + selectedOffense.group.split(' — ')[0];
+      refDisplay.style.display = 'block';
+    } else {
+      display.textContent = 'Vyberte přestupek';
+      display.classList.add('empty');
+      refDisplay.style.display = 'none';
+    }
+  }
+
+  document.getElementById('offenseTrigger').addEventListener('click', ()=>{
+    const search = document.getElementById('offenseSearch');
+    search.value = '';
+    renderOffenseList('');
+    show('offense');
+    setTimeout(()=> search.focus(), 150);
+  });
+  document.getElementById('offenseBackBtn').addEventListener('click', ()=> show('result'));
+  document.getElementById('offenseSearch').addEventListener('input', (e)=> renderOffenseList(e.target.value));
+
+})();
+</script>
+</body>
+</html>
