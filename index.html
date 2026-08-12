@@ -1,0 +1,694 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<title>SPZ Scanner</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=Inter:wght@400;500;600;700&family=Roboto+Mono:wght@500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/4.1.1/tesseract.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<style>
+  :root{
+    --asphalt:#0A0C10;
+    --asphalt-2:#14171D;
+    --asphalt-3:#1D2129;
+    --plate-blue:#1650C0;
+    --plate-face:#F5F3E9;
+    --ink:#111214;
+    --amber:#FFB020;
+    --amber-dim:#7A5713;
+    --text:#ECEDEF;
+    --muted:#8B92A0;
+    --good:#33D399;
+    --bad:#FF6058;
+    --line:#262B33;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html,body{height:100%;}
+  body{
+    margin:0;
+    background:var(--asphalt);
+    color:var(--text);
+    font-family:'Inter',system-ui,sans-serif;
+    overflow:hidden;
+    overscroll-behavior:none;
+  }
+  #app{position:fixed; inset:0; display:flex; flex-direction:column;}
+
+  /* ---------- SCREEN: START ---------- */
+  .screen{position:absolute; inset:0; display:none; flex-direction:column;}
+  .screen.active{display:flex;}
+
+  #startScreen{align-items:center; justify-content:center; text-align:center; padding:32px;}
+  .eyebrow{
+    font-family:'Roboto Mono',monospace;
+    font-size:12px; letter-spacing:.18em; text-transform:uppercase;
+    color:var(--amber); margin-bottom:14px;
+  }
+  #startScreen h1{
+    font-family:'Oswald',sans-serif; font-weight:600; font-size:30px;
+    letter-spacing:.02em; margin:0 0 10px; text-transform:uppercase;
+  }
+  #startScreen p{color:var(--muted); font-size:14px; line-height:1.5; max-width:320px; margin:0 0 32px;}
+  .shutter-btn{
+    width:92px; height:92px; border-radius:50%;
+    background:radial-gradient(circle at 35% 30%, #FFC65B, var(--amber) 60%);
+    border:4px solid var(--asphalt-3);
+    box-shadow:0 0 0 3px var(--amber), 0 10px 30px rgba(255,176,32,.25);
+    display:flex; align-items:center; justify-content:center;
+    cursor:pointer; transition:transform .12s ease;
+  }
+  .shutter-btn:active{transform:scale(.93);}
+  .shutter-btn svg{width:34px; height:34px;}
+  .tap-label{margin-top:16px; font-size:13px; color:var(--muted); font-family:'Roboto Mono',monospace; letter-spacing:.05em;}
+  .fallback-link{margin-top:22px; font-size:12.5px; color:var(--amber); text-decoration:underline; cursor:pointer; background:none; border:none; font-family:inherit;}
+  #camError{margin-top:18px; font-size:12.5px; color:var(--bad); max-width:300px; line-height:1.5; display:none;}
+
+  /* ---------- SCREEN: CAMERA ---------- */
+  #cameraScreen{background:#000;}
+  #video{width:100%; height:100%; object-fit:cover;}
+  .cam-overlay{position:absolute; inset:0; display:flex; flex-direction:column; justify-content:space-between; pointer-events:none;}
+  .cam-top{display:flex; justify-content:space-between; align-items:flex-start; padding:calc(env(safe-area-inset-top,0px) + 16px) 18px 0;}
+  .cam-chip{
+    font-family:'Roboto Mono',monospace; font-size:11px; letter-spacing:.12em;
+    color:#fff; background:rgba(0,0,0,.45); padding:6px 12px; border-radius:20px;
+    text-transform:uppercase;
+  }
+  .cam-close{
+    pointer-events:all; width:34px; height:34px; border-radius:50%;
+    background:rgba(0,0,0,.45); border:none; color:#fff; font-size:18px;
+    display:flex; align-items:center; justify-content:center; cursor:pointer;
+  }
+  .cam-guide-wrap{flex:1; display:flex; align-items:center; justify-content:center;}
+  .cam-guide{
+    width:78%; max-width:420px; aspect-ratio:520/113;
+    position:relative;
+  }
+  .cam-guide .corner{position:absolute; width:26px; height:26px; border:3px solid var(--amber);}
+  .corner.tl{top:-3px; left:-3px; border-right:none; border-bottom:none;}
+  .corner.tr{top:-3px; right:-3px; border-left:none; border-bottom:none;}
+  .corner.bl{bottom:-3px; left:-3px; border-right:none; border-top:none;}
+  .corner.br{bottom:-3px; right:-3px; border-left:none; border-top:none;}
+  .cam-hint{
+    text-align:center; color:#fff; font-size:12.5px; margin-top:14px;
+    font-family:'Roboto Mono',monospace; letter-spacing:.04em; text-shadow:0 1px 4px rgba(0,0,0,.6);
+  }
+  .cam-bottom{display:flex; align-items:center; justify-content:center; padding:0 0 calc(env(safe-area-inset-bottom,0px) + 30px);}
+  .cam-bottom .shutter-btn{pointer-events:all;}
+
+  /* ---------- SCREEN: PROCESSING ---------- */
+  #processingScreen{align-items:center; justify-content:center; background:var(--asphalt);}
+  .spinner{width:46px; height:46px; border-radius:50%; border:3px solid var(--asphalt-3); border-top-color:var(--amber); animation:spin .8s linear infinite;}
+  @keyframes spin{to{transform:rotate(360deg);}}
+  #processingScreen p{margin-top:18px; color:var(--muted); font-family:'Roboto Mono',monospace; font-size:12.5px; letter-spacing:.08em; text-transform:uppercase;}
+
+  /* ---------- SCREEN: RESULT ---------- */
+  #resultScreen{overflow-y:auto; padding:calc(env(safe-area-inset-top,0px) + 20px) 20px calc(env(safe-area-inset-bottom,0px) + 24px);}
+  .result-header{display:flex; align-items:center; justify-content:space-between; margin-bottom:18px;}
+  .result-header h2{font-family:'Oswald',sans-serif; font-size:15px; letter-spacing:.1em; text-transform:uppercase; margin:0; color:var(--muted); font-weight:600;}
+  .thumb-wrap{border-radius:14px; overflow:hidden; border:1px solid var(--line); margin-bottom:22px; background:var(--asphalt-2);}
+  #thumb{width:100%; display:block; max-height:220px; object-fit:cover;}
+
+  /* Signature element: replica plate, tap-to-edit */
+  .plate{
+    display:flex; align-items:stretch;
+    background:var(--plate-face);
+    border-radius:8px;
+    border:2px solid #2b2b2b;
+    box-shadow:0 8px 24px rgba(0,0,0,.35), inset 0 0 0 1px rgba(255,255,255,.4);
+    overflow:hidden;
+    margin-bottom:8px;
+  }
+  .plate-strip{
+    width:34px; flex-shrink:0;
+    background:var(--plate-blue);
+    display:flex; flex-direction:column; align-items:center; justify-content:space-between;
+    padding:8px 0;
+  }
+  .plate-strip .stars{color:#FFCC00; font-size:9px; line-height:1.1; letter-spacing:1px; text-align:center;}
+  .plate-strip .cz{color:#fff; font-family:'Oswald',sans-serif; font-weight:600; font-size:11px; letter-spacing:.03em;}
+  .plate-input{
+    flex:1; border:none; background:transparent; color:var(--ink);
+    font-family:'Oswald',sans-serif; font-weight:600; font-size:clamp(28px,9vw,42px);
+    letter-spacing:.09em; text-align:center; text-transform:uppercase;
+    padding:6px 8px; width:100%; min-width:0;
+  }
+  .plate-input:focus{outline:none; background:rgba(22,80,192,.06);}
+  .plate-caption{font-size:11px; color:var(--muted); font-family:'Roboto Mono',monospace; letter-spacing:.06em; margin:0 2px 26px; text-transform:uppercase;}
+
+  .field-row{display:flex; gap:12px; margin-bottom:22px;}
+  .field{flex:1; background:var(--asphalt-2); border:1px solid var(--line); border-radius:12px; padding:10px 14px;}
+  .field label{display:block; font-size:10.5px; color:var(--muted); font-family:'Roboto Mono',monospace; letter-spacing:.08em; text-transform:uppercase; margin-bottom:4px;}
+  .field input{
+    width:100%; background:none; border:none; color:var(--text);
+    font-family:'Inter',sans-serif; font-weight:600; font-size:16px; padding:0;
+  }
+  .field input:focus{outline:none;}
+  .field input::-webkit-calendar-picker-indicator{filter:invert(0.6);}
+
+  .confidence{display:flex; align-items:center; gap:8px; margin:-8px 2px 24px; font-size:12px; color:var(--muted); font-family:'Roboto Mono',monospace;}
+  .dot{width:7px; height:7px; border-radius:50%;}
+
+  .btn-row{display:flex; gap:12px;}
+  .btn{
+    flex:1; border-radius:14px; padding:15px 12px; font-family:'Inter',sans-serif; font-weight:700;
+    font-size:14.5px; text-align:center; cursor:pointer; border:none; letter-spacing:.01em;
+  }
+  .btn-ghost{background:transparent; border:1.5px solid var(--line); color:var(--text);}
+  .btn-primary{background:var(--amber); color:#241a00;}
+  .btn:active{transform:scale(.97);}
+  .btn[disabled]{opacity:.5; pointer-events:none;}
+
+  .saved-note{margin-top:16px; text-align:center; font-size:12.5px; color:var(--good); font-family:'Roboto Mono',monospace; display:none;}
+
+  canvas{display:none;}
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- START -->
+  <div id="startScreen" class="screen active">
+    <div class="eyebrow">SPZ Scanner</div>
+    <h1>Vyfoťte&nbsp;značku</h1>
+    <p>Klepnutím spustíte fotoaparát, vyfotíte registrační značku a appka ji rovnou rozpozná a připraví jako PDF.</p>
+    <div class="shutter-btn" id="startBtn">
+      <svg viewBox="0 0 24 24" fill="none"><path d="M4 8a2 2 0 0 1 2-2h1.2a1 1 0 0 0 .87-.5l.66-1.15A2 2 0 0 1 10.46 3h3.08a2 2 0 0 1 1.73 1.35l.66 1.15a1 1 0 0 0 .87.5H18a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8Z" stroke="#241a00" stroke-width="1.8"/><circle cx="12" cy="13" r="3.4" stroke="#241a00" stroke-width="1.8"/></svg>
+    </div>
+    <div class="tap-label">KLEPNĚTE PRO SPUŠTĚNÍ</div>
+    <button class="fallback-link" id="fallbackLink">Kamera se nespouští? Použít fotoaparát telefonu</button>
+    <div id="camError"></div>
+  </div>
+
+  <!-- CAMERA -->
+  <div id="cameraScreen" class="screen">
+    <video id="video" autoplay playsinline muted></video>
+    <div class="cam-overlay">
+      <div class="cam-top">
+        <div class="cam-chip">Zaměřte značku</div>
+        <button class="cam-close" id="closeCamBtn" style="pointer-events:all;">✕</button>
+      </div>
+      <div class="cam-guide-wrap">
+        <div class="cam-guide">
+          <div class="corner tl"></div><div class="corner tr"></div>
+          <div class="corner bl"></div><div class="corner br"></div>
+        </div>
+      </div>
+      <div>
+        <div class="cam-hint">SROVNEJTE ZNAČKU DO RÁMEČKU</div>
+        <div class="cam-bottom">
+          <div class="shutter-btn" id="captureBtn">
+            <svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="7" fill="#241a00"/></svg>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- PROCESSING -->
+  <div id="processingScreen" class="screen">
+    <div class="spinner"></div>
+    <p id="processingLabel">Rozpoznávám značku…</p>
+  </div>
+
+  <!-- RESULT -->
+  <div id="resultScreen" class="screen">
+    <div class="result-header">
+      <h2>Rozpoznaný záznam</h2>
+      <button class="fallback-link" id="retakeLink" style="margin-top:0;">Přefotit</button>
+    </div>
+    <div class="thumb-wrap"><img id="thumb" alt="Fotka značky"></div>
+
+    <div class="plate">
+      <div class="plate-strip"><span class="stars">★★<br>★★</span><span class="cz">CZ</span></div>
+      <input id="plateInput" class="plate-input" maxlength="9" autocapitalize="characters" spellcheck="false">
+    </div>
+    <div class="plate-caption">Klepnutím upravíte značku</div>
+    <div class="confidence" id="confidenceRow"></div>
+
+    <div class="field-row">
+      <div class="field">
+        <label>Datum</label>
+        <input type="date" id="dateInput">
+      </div>
+      <div class="field">
+        <label>Čas</label>
+        <input type="time" id="timeInput">
+      </div>
+    </div>
+
+    <div class="btn-row">
+      <button class="btn btn-ghost" id="newScanBtn">Nová fotka</button>
+      <button class="btn btn-primary" id="makePdfBtn">Vytvořit PDF</button>
+    </div>
+    <div class="saved-note" id="savedNote">✓ PDF staženo</div>
+  </div>
+
+  <input type="file" id="fileFallback" accept="image/*" capture="environment" style="display:none;">
+  <canvas id="canvas"></canvas>
+</div>
+
+<script>
+(function(){
+  const screens = {
+    start: document.getElementById('startScreen'),
+    camera: document.getElementById('cameraScreen'),
+    processing: document.getElementById('processingScreen'),
+    result: document.getElementById('resultScreen'),
+  };
+  function show(name){
+    Object.values(screens).forEach(s=>s.classList.remove('active'));
+    screens[name].classList.add('active');
+  }
+
+  const video = document.getElementById('video');
+  const canvas = document.getElementById('canvas');
+  const ctx = canvas.getContext('2d');
+  const camError = document.getElementById('camError');
+  let stream = null;
+  let capturedDataUrl = null;
+
+  // ---------- Camera lifecycle ----------
+  async function openCamera(){
+    camError.style.display = 'none';
+    try{
+      stream = await navigator.mediaDevices.getUserMedia({
+        video:{ facingMode:{ideal:'environment'}, width:{ideal:1920}, height:{ideal:1080} },
+        audio:false
+      });
+      video.srcObject = stream;
+      show('camera');
+    }catch(err){
+      // Live in-app camera blocked (common inside embedded webviews) — fall back
+      // to the native camera app immediately instead of leaving the UI stuck.
+      show('start');
+      camError.textContent = 'Živou kameru se nepodařilo spustit (' + err.message + '). Otevírám fotoaparát telefonu…';
+      camError.style.display = 'block';
+      fileFallback.click();
+    }
+  }
+  function closeCamera(){
+    if(stream){
+      stream.getTracks().forEach(t=>t.stop());
+      stream = null;
+    }
+  }
+
+  document.getElementById('startBtn').addEventListener('click', openCamera);
+  document.getElementById('closeCamBtn').addEventListener('click', ()=>{
+    closeCamera();
+    show('start');
+  });
+
+  // Fallback to native camera app (useful if getUserMedia is blocked in the embedding webview)
+  const fileFallback = document.getElementById('fileFallback');
+  document.getElementById('fallbackLink').addEventListener('click', ()=> fileFallback.click());
+  fileFallback.addEventListener('change', (e)=>{
+    const file = e.target.files[0];
+    if(!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev)=>{
+      const img = new Image();
+      img.onload = ()=>{
+        canvas.width = img.width; canvas.height = img.height;
+        ctx.drawImage(img,0,0);
+        finishCapture(canvas.toDataURL('image/jpeg',0.92));
+      };
+      img.src = ev.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
+
+  // ---------- Capture from live video, cropped to guide rectangle ----------
+  document.getElementById('captureBtn').addEventListener('click', ()=>{
+    const vw = video.videoWidth, vh = video.videoHeight;
+    if(!vw || !vh) return;
+
+    // Guide box is centered, width 78% of viewport (max 420px), aspect ratio 520:113
+    const guideEl = document.querySelector('.cam-guide');
+    const gRect = guideEl.getBoundingClientRect();
+    const vRect = video.getBoundingClientRect();
+
+    // video uses object-fit:cover -> compute the visible source rect mapping
+    const scale = Math.max(vRect.width / vw, vRect.height / vh);
+    const displayedW = vw * scale, displayedH = vh * scale;
+    const offsetX = (displayedW - vRect.width) / 2;
+    const offsetY = (displayedH - vRect.height) / 2;
+
+    function toSource(px, py){
+      return {
+        x: (px - vRect.left + offsetX) / scale,
+        y: (py - vRect.top + offsetY) / scale
+      };
+    }
+    const topLeft = toSource(gRect.left, gRect.top);
+    const bottomRight = toSource(gRect.right, gRect.bottom);
+    const cropX = Math.max(0, topLeft.x);
+    const cropY = Math.max(0, topLeft.y);
+    const cropW = Math.min(vw, bottomRight.x) - cropX;
+    const cropH = Math.min(vh, bottomRight.y) - cropY;
+
+    // Full-frame photo (for the record / PDF)
+    canvas.width = vw; canvas.height = vh;
+    ctx.drawImage(video, 0, 0, vw, vh);
+    const fullShot = canvas.toDataURL('image/jpeg', 0.9);
+
+    // Cropped plate region (for OCR accuracy)
+    const cropCanvas = document.createElement('canvas');
+    cropCanvas.width = Math.max(1, cropW);
+    cropCanvas.height = Math.max(1, cropH);
+    cropCanvas.getContext('2d').drawImage(video, cropX, cropY, cropW, cropH, 0, 0, cropCanvas.width, cropCanvas.height);
+
+    closeCamera();
+    finishCapture(fullShot, cropCanvas);
+  });
+
+  document.getElementById('retakeLink').addEventListener('click', openCamera);
+  document.getElementById('newScanBtn').addEventListener('click', openCamera);
+
+  // ---------- OCR + result ----------
+  async function finishCapture(fullShotDataUrl, cropCanvasEl){
+    capturedDataUrl = fullShotDataUrl;
+    document.getElementById('thumb').src = fullShotDataUrl;
+    show('processing');
+
+    let recognizedText = '';
+    let confidence = 0;
+    let ocrErrorMessage = null;
+    try{
+      let tightCrop = cropCanvasEl || null;
+
+      if(!tightCrop){
+        // Native-camera fallback: the plate is usually a small rectangle
+        // surrounded by a lot of irrelevant background (asphalt, car body).
+        // Auto-detect the bright plate-shaped region and crop tightly to it
+        // first — this gives OCR the same close-up quality as the live-camera
+        // guide box, instead of scanning the whole noisy photo.
+        tightCrop = await autoLocatePlate(fullShotDataUrl);
+      }
+
+      if(tightCrop){
+        const source = await preprocessForOcr(tightCrop.toDataURL('image/jpeg', 0.95));
+        const { data } = await Tesseract.recognize(source, 'eng', {
+          tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789',
+          tessedit_pageseg_mode: '7'
+        });
+        recognizedText = cleanPlate(data.text);
+        confidence = Math.round(data.confidence || 0);
+      }
+
+      if(!recognizedText){
+        // Either no bright rectangle was found, or the tight-crop read came
+        // back empty — fall back to scanning the whole frame for words and
+        // picking the best plate-shaped combination.
+        const prepped = await preprocessForOcr(fullShotDataUrl);
+        const { data } = await Tesseract.recognize(prepped, 'eng', {
+          tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 ',
+          tessedit_pageseg_mode: '11'
+        });
+        const best = findPlateCandidate(data.words || []);
+        recognizedText = best.text;
+        confidence = best.confidence;
+      }
+    }catch(err){
+      recognizedText = '';
+      confidence = 0;
+      ocrErrorMessage = (err && err.message) ? err.message : String(err);
+      console.error('OCR failed:', err);
+    }
+
+    populateResult(recognizedText, confidence, ocrErrorMessage);
+    show('result');
+  }
+
+  // Finds the bright, plate-shaped rectangle in a photo (the plate is almost
+  // always much lighter than its surroundings — asphalt, car paint, etc.)
+  // and returns a tightly-cropped canvas of just that region, or null if no
+  // convincing rectangle was found. Runs on a small downsampled copy for
+  // speed, then maps the result back to full-resolution coordinates.
+  function autoLocatePlate(dataUrl){
+    return new Promise((resolve)=>{
+      const img = new Image();
+      img.onload = ()=>{
+        try{
+          const scale = Math.min(1, 320 / img.width);
+          const w = Math.max(1, Math.round(img.width * scale));
+          const h = Math.max(1, Math.round(img.height * scale));
+          const sc = document.createElement('canvas');
+          sc.width = w; sc.height = h;
+          const scx = sc.getContext('2d');
+          scx.drawImage(img, 0, 0, w, h);
+          const data = scx.getImageData(0, 0, w, h).data;
+
+          const bright = new Float32Array(w * h);
+          let total = 0;
+          for(let i = 0; i < w * h; i++){
+            const v = (data[i*4] + data[i*4+1] + data[i*4+2]) / 3;
+            bright[i] = v;
+            total += v;
+          }
+          const mean = total / (w * h);
+          const threshold = Math.min(235, mean + 40);
+
+          const mask = new Uint8Array(w * h);
+          for(let i = 0; i < w * h; i++) mask[i] = bright[i] > threshold ? 1 : 0;
+
+          const visited = new Uint8Array(w * h);
+          let best = null;
+
+          for(let y = 0; y < h; y++){
+            for(let x = 0; x < w; x++){
+              const idx = y * w + x;
+              if(!mask[idx] || visited[idx]) continue;
+
+              let minX=x, maxX=x, minY=y, maxY=y, count=0;
+              const stack = [idx];
+              visited[idx] = 1;
+              while(stack.length){
+                const cur = stack.pop();
+                count++;
+                const cx_ = cur % w, cy_ = (cur - cx_) / w;
+                if(cx_ < minX) minX = cx_;
+                if(cx_ > maxX) maxX = cx_;
+                if(cy_ < minY) minY = cy_;
+                if(cy_ > maxY) maxY = cy_;
+
+                if(cx_ > 0 && !visited[cur-1] && mask[cur-1]){ visited[cur-1]=1; stack.push(cur-1); }
+                if(cx_ < w-1 && !visited[cur+1] && mask[cur+1]){ visited[cur+1]=1; stack.push(cur+1); }
+                if(cur-w >= 0 && !visited[cur-w] && mask[cur-w]){ visited[cur-w]=1; stack.push(cur-w); }
+                if(cur+w < w*h && !visited[cur+w] && mask[cur+w]){ visited[cur+w]=1; stack.push(cur+w); }
+              }
+
+              const bw = maxX - minX + 1, bh = maxY - minY + 1;
+              const fill = count / (bw * bh);
+              const aspect = bw / bh;
+              // Czech plates are roughly 4.6:1 (single line) or ~1.3:1 (two-line) —
+              // allow a generous range, require it to be a meaningfully large,
+              // fairly solid rectangle so we don't latch onto small glints/noise.
+              if(bw >= w*0.12 && bh >= 3 && aspect > 1.8 && aspect < 9 && fill > 0.35){
+                if(!best || count > best.count){
+                  best = { minX, maxX, minY, maxY, count };
+                }
+              }
+            }
+          }
+
+          if(!best){ resolve(null); return; }
+
+          const padX = (best.maxX - best.minX) * 0.15;
+          const padY = (best.maxY - best.minY) * 0.45;
+          const ox0 = Math.max(0, (best.minX - padX) / scale);
+          const oy0 = Math.max(0, (best.minY - padY) / scale);
+          const ox1 = Math.min(img.width, (best.maxX + padX) / scale);
+          const oy1 = Math.min(img.height, (best.maxY + padY) / scale);
+
+          const outC = document.createElement('canvas');
+          outC.width = Math.max(1, Math.round(ox1 - ox0));
+          outC.height = Math.max(1, Math.round(oy1 - oy0));
+          outC.getContext('2d').drawImage(img, ox0, oy0, ox1-ox0, oy1-oy0, 0, 0, outC.width, outC.height);
+          resolve(outC);
+        }catch(e){
+          resolve(null);
+        }
+      };
+      img.onerror = ()=> resolve(null);
+      img.src = dataUrl;
+    });
+  }
+
+  function cleanPlate(raw){
+    const cleaned = (raw||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
+    return cleaned.slice(0,8);
+  }
+
+  // Grayscale + contrast boost — plain black-on-white plate text becomes much
+  // easier for Tesseract to isolate from a busy full-car photo.
+  function preprocessForOcr(dataUrl){
+    return new Promise((resolve)=>{
+      const img = new Image();
+      img.onload = ()=>{
+        const c = document.createElement('canvas');
+        c.width = img.width; c.height = img.height;
+        const cx = c.getContext('2d');
+        cx.drawImage(img,0,0);
+        const imgData = cx.getImageData(0,0,c.width,c.height);
+        const d = imgData.data;
+        for(let i=0;i<d.length;i+=4){
+          const gray = 0.299*d[i] + 0.587*d[i+1] + 0.114*d[i+2];
+          const contrasted = Math.min(255, Math.max(0, (gray-128)*1.5+128));
+          d[i]=d[i+1]=d[i+2]=contrasted;
+        }
+        cx.putImageData(imgData,0,0);
+        resolve(c.toDataURL('image/jpeg',0.95));
+      };
+      img.onerror = ()=> resolve(dataUrl);
+      img.src = dataUrl;
+    });
+  }
+
+  // Scans OCR'd words for the token (or combination of nearby tokens) that best
+  // matches the shape of a Czech plate: a short alphanumeric block containing
+  // both letters and several digits, e.g. "6B9" + "4190" -> "6B94190".
+  // Tokens are grouped into text lines (by vertical position) so we don't
+  // accidentally merge the plate number with unrelated text below/above it,
+  // and combinations skip over stray tokens in between (e.g. inspection
+  // stickers/holograms sitting between the two halves of the plate).
+  function findPlateCandidate(words){
+    const clean = s => (s||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
+    const toks = words.map(w=>({
+      text: clean(w.text),
+      confidence: w.confidence||0,
+      x0: w.bbox ? w.bbox.x0 : 0,
+      y0: w.bbox ? w.bbox.y0 : 0,
+      y1: w.bbox ? w.bbox.y1 : 0,
+    })).filter(t=>t.text.length>0);
+
+    if(toks.length===0) return {text:'',confidence:0};
+
+    const heights = toks.map(t=>t.y1-t.y0).filter(h=>h>0);
+    const medH = heights.length ? heights.slice().sort((a,b)=>a-b)[Math.floor(heights.length/2)] : 20;
+    const centerOf = (t)=> (t.y0+t.y1)/2;
+
+    const lines = [];
+    toks.forEach(t=>{
+      const c = centerOf(t);
+      let line = lines.find(l=> Math.abs(l.center - c) < medH*0.7);
+      if(line){ line.toks.push(t); line.center = (line.center*line.count + c)/(line.count+1); line.count++; }
+      else lines.push({center:c, toks:[t], count:1});
+    });
+
+    function score(str){
+      const digits = (str.match(/[0-9]/g)||[]).length;
+      const letters = (str.match(/[A-Z]/g)||[]).length;
+      if(digits===0 || letters===0) return -1;
+      if(str.length<5 || str.length>9) return -1;
+      let s = digits*2 + letters;
+      if(str.length===7 || str.length===8) s += 5;
+      return s;
+    }
+
+    function combos(arr, size){
+      const results = [];
+      (function helper(start, combo){
+        if(combo.length===size){ results.push(combo.slice()); return; }
+        for(let i=start;i<arr.length;i++){ combo.push(arr[i]); helper(i+1, combo); combo.pop(); }
+      })(0, []);
+      return results;
+    }
+
+    let best = { text:'', score:-1, confidence:0 };
+
+    lines.forEach(line=>{
+      const sorted = line.toks.slice().sort((a,b)=>a.x0-b.x0);
+      for(let size=1; size<=Math.min(3, sorted.length); size++){
+        combos(sorted, size).forEach(group=>{
+          const combined = group.map(g=>g.text).join('');
+          const sc = score(combined);
+          if(sc > best.score){
+            best = { text: combined, score: sc, confidence: Math.min(...group.map(g=>g.confidence)) };
+          }
+        });
+      }
+    });
+
+    return { text: best.text.slice(0,9), confidence: Math.round(best.confidence||0) };
+  }
+
+  function formatPlateDisplay(code){
+    // Common CZ format is 3 chars + space + 4 chars, e.g. "1AB 2345" — used only for display spacing
+    if(code.length >= 6){
+      return code.slice(0, code.length-4) + ' ' + code.slice(-4);
+    }
+    return code;
+  }
+
+  function populateResult(text, confidence, ocrErrorMessage){
+    document.getElementById('plateInput').value = formatPlateDisplay(text);
+    const now = new Date();
+    document.getElementById('dateInput').value = now.toISOString().slice(0,10);
+    document.getElementById('timeInput').value = now.toTimeString().slice(0,5);
+
+    const row = document.getElementById('confidenceRow');
+    row.innerHTML = '';
+    if(text){
+      const dot = document.createElement('span');
+      dot.className = 'dot';
+      dot.style.background = confidence >= 65 ? 'var(--good)' : (confidence >= 35 ? 'var(--amber)' : 'var(--bad)');
+      row.appendChild(dot);
+      const label = document.createElement('span');
+      label.textContent = 'Jistota rozpoznání: ' + confidence + '%  ·  zkontrolujte a případně upravte';
+      row.appendChild(label);
+    } else if(ocrErrorMessage){
+      row.innerHTML = '<span style="color:var(--bad)">OCR se nespustilo (' + ocrErrorMessage + '). Pravděpodobně síťové omezení tohoto náhledu appky — vyzkoušejte appku po stažení a otevření mimo Claude (např. na Netlify/Vercel). Zatím zadejte značku ručně.</span>';
+    } else {
+      row.innerHTML = '<span style="color:var(--bad)">Značku se nepodařilo rozpoznat — zadejte ručně</span>';
+    }
+    document.getElementById('savedNote').style.display = 'none';
+  }
+
+  // ---------- PDF export ----------
+  document.getElementById('makePdfBtn').addEventListener('click', ()=>{
+    const { jsPDF } = window.jspdf;
+    const plate = document.getElementById('plateInput').value.trim() || 'NEZNÁMÁ SPZ';
+    const date = document.getElementById('dateInput').value;
+    const time = document.getElementById('timeInput').value;
+
+    const doc = new jsPDF({ unit:'mm', format:'a4' });
+    const pageW = doc.internal.pageSize.getWidth();
+
+    doc.setFont('helvetica','bold');
+    doc.setFontSize(18);
+    doc.text('Záznam registrační značky', pageW/2, 20, {align:'center'});
+
+    doc.setDrawColor(20,20,20);
+    doc.setLineWidth(0.6);
+    doc.roundedRect(pageW/2 - 45, 30, 90, 24, 3, 3);
+    doc.setFontSize(22);
+    doc.setFont('helvetica','bold');
+    doc.text(plate, pageW/2, 46, {align:'center'});
+
+    doc.setFont('helvetica','normal');
+    doc.setFontSize(12);
+    doc.text('Datum: ' + (date || '—'), pageW/2 - 45, 66);
+    doc.text('Čas: ' + (time || '—'), pageW/2 + 5, 66);
+
+    if(capturedDataUrl){
+      const imgW = pageW - 40;
+      const imgH = imgW * 0.62;
+      doc.addImage(capturedDataUrl, 'JPEG', 20, 78, imgW, imgH);
+    }
+
+    doc.setFontSize(9);
+    doc.setTextColor(140);
+    doc.text('Vygenerováno aplikací SPZ Scanner', pageW/2, 285, {align:'center'});
+
+    doc.save('SPZ_' + plate.replace(/\s/g,'') + '_' + (date||'') + '.pdf');
+    const note = document.getElementById('savedNote');
+    note.style.display = 'block';
+  });
+
+})();
+</script>
+</body>
+</html>
