@@ -785,7 +785,7 @@
         // výzvy — číslo jednací i všechna pole už jsou v tuhle chvíli
         // hotová, takže je to nejpřirozenější okamžik se zeptat.
         const submittedRecord = { ...lastGeneratedPdf, noticeNumber };
-        const wantsPrint = await askPrintAfterSubmit(`✓ Přestupek odeslán do přehledu (č. ${noticeNumber})`);
+        const wantsPrint = await askPrintAfterSubmit(`✓ Přestupek odeslán do přehledu<br>Č. j.: ${noticeNumber}`);
         if(wantsPrint){
           await printViaStarWebPRNT(submittedRecord);
           setTimeout(()=>{ show('start'); }, 1200);
@@ -1482,7 +1482,7 @@
   function askPrintAfterSubmit(successText){
     return new Promise((resolve)=>{
       const overlay = document.getElementById('printConfirmOverlay');
-      document.getElementById('printConfirmSuccessText').textContent = successText;
+      document.getElementById('printConfirmSuccessText').innerHTML = successText;
       const yesBtn = document.getElementById('printConfirmYes');
       const noBtn = document.getElementById('printConfirmNo');
       function cleanup(result){
