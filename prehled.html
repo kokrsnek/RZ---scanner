@@ -67,7 +67,10 @@
     padding:calc(env(safe-area-inset-top,0px) + 18px) 18px 14px; background:var(--asphalt-2);
     border-bottom:1px solid var(--line);
   }
-  .list-top h1{font-size:17px; text-transform:uppercase; text-align:center;}
+  .list-top h1{
+    font-size:17px; text-transform:uppercase; text-align:center;
+    -webkit-user-select:none; user-select:none; -webkit-touch-callout:none;
+  }
   .list-bottom-bar{
     position:fixed; left:0; right:0; bottom:0; z-index:20;
     display:flex; justify-content:space-between; align-items:center; gap:10px;
@@ -79,7 +82,6 @@
     font-weight:600; font-size:14px; cursor:pointer; text-decoration:none; text-align:center;
     border:1.5px solid var(--line); color:var(--text); background:transparent;
   }
-  .list-bottom-btn.logout{color:var(--bad); border-color:var(--bad); display:flex; align-items:center; justify-content:center;}
   .list-bottom-btn.print{color:#5B8DEF; border-color:#5B8DEF;}
   .list-bottom-btn.resolve{color:var(--good); border-color:var(--good);}
   .list-bottom-btn.resolve[disabled]{background:var(--good); color:#0A0C10; opacity:1;}
@@ -203,7 +205,7 @@
   <!-- LIST -->
   <div id="listScreen" class="screen">
     <div class="list-top">
-      <h1>Přehled přestupků</h1>
+      <h1 id="listTitle">Přehled přestupků</h1>
     </div>
     <div class="search-row">
       <input type="text" id="searchInput" placeholder="Hledat podle RZ nebo ulice…" autocomplete="off">
@@ -212,13 +214,6 @@
       <div class="list-empty" id="listStatus">Načítám…</div>
     </div>
     <div class="list-bottom-bar">
-      <button class="list-bottom-btn logout" id="logoutBtn" title="Odhlásit">
-        <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;">
-          <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
-          <polyline points="16 17 21 12 16 7"/>
-          <line x1="21" y1="12" x2="9" y2="12"/>
-        </svg>
-      </button>
       <a href="https://kokrsnek.github.io/RZ---scanner/index.html" class="list-bottom-btn back">Zpět</a>
     </div>
   </div>
@@ -323,9 +318,28 @@
     if(e.key === 'Enter') document.getElementById('loginSubmitBtn').click();
   });
 
-  document.getElementById('logoutBtn').addEventListener('click', ()=>{
-    auth.signOut();
-  });
+  // Skrytý odhlašovací gesto: podržení nadpisu "Přehled přestupků" 4 s.
+  // Žádné tlačítko odhlášení v UI záměrně není — appka je sdílená mezi
+  // strážníky na jednom telefonu, takže odhlášení nemá být na první pohled
+  // dostupné/omylem stisknutelné.
+  (function setupHiddenLogout(){
+    const titleEl = document.getElementById('listTitle');
+    if(!titleEl) return;
+    let holdTimer = null;
+    function start(){
+      cancel();
+      holdTimer = setTimeout(()=>{ auth.signOut(); }, 4000);
+    }
+    function cancel(){
+      if(holdTimer){ clearTimeout(holdTimer); holdTimer = null; }
+    }
+    titleEl.addEventListener('touchstart', start, { passive: true });
+    titleEl.addEventListener('touchend', cancel);
+    titleEl.addEventListener('touchcancel', cancel);
+    titleEl.addEventListener('mousedown', start);
+    titleEl.addEventListener('mouseup', cancel);
+    titleEl.addEventListener('mouseleave', cancel);
+  })();
 
   // ---------- List ----------
   async function loadRecords(){
@@ -690,14 +704,20 @@
       renderPhotoGallery(record, record._resolvedPhotos, record._resolvedMime || 'image/jpeg');
       photoToggleBtn.textContent = 'Foto' + (record._resolvedPhotos.length > 1 ? ' (' + record._resolvedPhotos.length + ')' : '');
       photoToggleRow.style.display = 'block';
+      photoWrap.classList.add('open');
     } else if(legacyPhotos.length){
       record._resolvedPhotos = legacyPhotos;
       record._resolvedMime = record.photoMime || 'image/jpeg';
       renderPhotoGallery(record, legacyPhotos, record._resolvedMime);
       photoToggleBtn.textContent = 'Foto' + (legacyPhotos.length > 1 ? ' (' + legacyPhotos.length + ')' : '');
       photoToggleRow.style.display = 'block';
+      photoWrap.classList.add('open');
     } else if(record.hasPhotos){
+      // Appka teď fotky rovnou dotáhne a zobrazí, místo aby čekala na
+      // klepnutí na "Foto" — stačí tedy jen zavolat stejnou logiku, kterou
+      // by jinak spustil klik na tlačítko.
       photoToggleRow.style.display = 'block';
+      loadAndShowPhotos(record);
     } else {
       photoToggleRow.style.display = 'none';
     }
@@ -772,17 +792,12 @@
     }
   });
 
-  document.getElementById('photoToggleBtn').addEventListener('click', async ()=>{
-    const record = currentDetailRecord;
-    if(!record) return;
+  // Sdílená logika stažení fotek ze subkolekce — volá ji jak automatické
+  // otevření detailu (viz openDetail), tak ruční klik na tlačítko "Foto"
+  // (např. po chybě, kdy je potřeba zkusit znovu).
+  async function loadAndShowPhotos(record){
     const photoWrap = document.getElementById('photoWrap');
     const photoToggleBtn = document.getElementById('photoToggleBtn');
-
-    if(record._resolvedPhotos){
-      photoWrap.classList.toggle('open');
-      return;
-    }
-
     photoToggleBtn.disabled = true;
     photoToggleBtn.textContent = 'Načítám…';
     try{
@@ -801,6 +816,19 @@
       photoToggleBtn.textContent = 'Foto (chyba)';
       photoToggleBtn.disabled = false;
     }
+  }
+
+  document.getElementById('photoToggleBtn').addEventListener('click', async ()=>{
+    const record = currentDetailRecord;
+    if(!record) return;
+    const photoWrap = document.getElementById('photoWrap');
+
+    if(record._resolvedPhotos){
+      photoWrap.classList.toggle('open');
+      return;
+    }
+
+    await loadAndShowPhotos(record);
   });
 
   document.getElementById('detailCloseBtn').addEventListener('click', async ()=>{
