@@ -1589,6 +1589,10 @@
         });
         photoToggleBtn.textContent = 'Foto (' + allPhotoDataUrls.length + ')';
         photoToggleBtn.style.display = 'inline-block';
+        // Rovnou zobrazit, ať je vidět bez nutnosti klepnout na tlačítko —
+        // appka je má stejně už lokálně na telefonu, žádné dotahování z
+        // internetu tu není potřeba.
+        photoWrap.classList.add('open');
       } else {
         photoToggleBtn.style.display = 'none';
       }
