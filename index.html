@@ -1461,12 +1461,22 @@
         // Nastavení → Star webPRNT, bez ohledu na to, co je tu uvedené.
         const trader = new StarWebPrintTrader({ url: 'https://localhost/StarWebPRNT/SendMessage' });
         trader.onReceive = function(response){
-          const ok = !!(response && response.success);
-          setSubmitNote(ok ? '✓ Vytištěno' : 'Tiskárna nahlásila chybu.', ok ? 'ok' : 'err');
+          const ok = !!(response && (response.traderSuccess === true || response.success === true));
+          const detail = response
+            ? ' [traderSuccess:' + response.traderSuccess + ' traderCode:' + response.traderCode +
+              ' traderStatus:' + response.traderStatus + ' status:' + response.status +
+              (response.responseText ? ' text:' + response.responseText : '') + ']'
+            : '';
+          setSubmitNote((ok ? '✓ Vytištěno' : 'Tiskárna nahlásila chybu.') + detail, ok ? 'ok' : 'err');
           resolve(ok);
         };
         trader.onError = function(error){
-          setSubmitNote('Tisk se nezdařil: ' + (error && error.status || 'zkontroluj spárování tiskárny.'), 'err');
+          // error.status bývá 0, když appka vůbec nedostala odpověď — "0 ||"
+          // by to omylem schovalo za obecnou hlášku, proto explicitní zápis.
+          const detail = error
+            ? ' (status: ' + error.status + (error.responseText ? ', ' + error.responseText : '') + ')'
+            : '';
+          setSubmitNote('Tisk se nezdařil' + detail + '.', 'err');
           resolve(false);
         };
         trader.sendMessage({ request: request });

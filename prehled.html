@@ -501,13 +501,21 @@
         const request = buildStarPrintRequest(record);
         const trader = new StarWebPrintTrader({ url: 'https://localhost/StarWebPRNT/SendMessage' });
         trader.onReceive = function(response){
-          const ok = !!(response && response.success);
-          setDetailNote(ok ? '✓ Vytištěno' : 'Tiskárna nahlásila chybu.', ok ? 'ok' : 'err');
+          const ok = !!(response && (response.traderSuccess === true || response.success === true));
+          const detail = response
+            ? ' [traderSuccess:' + response.traderSuccess + ' traderCode:' + response.traderCode +
+              ' traderStatus:' + response.traderStatus + ' status:' + response.status +
+              (response.responseText ? ' text:' + response.responseText : '') + ']'
+            : '';
+          setDetailNote((ok ? '✓ Vytištěno' : 'Tiskárna nahlásila chybu.') + detail, ok ? 'ok' : 'err');
           if(ok) currentRecordPrinted = true;
           resolve(ok);
         };
         trader.onError = function(error){
-          setDetailNote('Tisk se nezdařil: ' + (error && error.status || 'zkontroluj spárování tiskárny.'), 'err');
+          const detail = error
+            ? ' (status: ' + error.status + (error.responseText ? ', ' + error.responseText : '') + ')'
+            : '';
+          setDetailNote('Tisk se nezdařil' + detail + '.', 'err');
           resolve(false);
         };
         trader.sendMessage({ request: request });
