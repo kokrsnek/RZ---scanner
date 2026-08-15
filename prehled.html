@@ -446,7 +446,7 @@
     }
     req += builder.createTextElement({ data: '\nREGISTRAČNÍ ZNAČKA\n' });
     req += builder.createTextElement({ data: (record.plate || '') + '\n', width: 3, height: 3, emphasis: true });
-    req += builder.createRuledLineElement({ thickness: 2, lineWidth: 384 });
+    req += builder.createRuledLineElement({ thickness: 'thin', width: 384 });
     req += builder.createTextElement({
       data: 'Datum: ' + formatDateCz(record.date) + '   Čas: ' + (record.time || '—') + '\n\n'
     });
