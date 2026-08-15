@@ -27,13 +27,13 @@
     --line:#262B33;
   }
   *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
-  html,body{height:100%;}
+  html,body{height:100%; overflow-x:hidden; max-width:100vw;}
   body{
     margin:0; background:var(--asphalt); color:var(--text);
     font-family:'Inter',system-ui,sans-serif;
   }
-  #app{min-height:100%; display:flex; flex-direction:column;}
-  .screen{position:fixed; inset:0; display:none; flex-direction:column;}
+  #app{min-height:100%; display:flex; flex-direction:column; overflow-x:hidden;}
+  .screen{position:fixed; inset:0; display:none; flex-direction:column; overflow-x:hidden;}
   .screen.active{display:flex;}
 
   h1,h2{font-family:'Oswald',sans-serif; font-weight:600; letter-spacing:.02em; margin:0;}
@@ -116,7 +116,7 @@
     width:100%; background:var(--asphalt-2); border:1px solid var(--line); border-radius:12px;
     padding:11px 14px; color:var(--text); font-size:14.5px; font-family:inherit; outline:none;
   }
-  #listBody{flex:1; overflow-y:auto; -webkit-overflow-scrolling:touch; padding:14px 18px calc(env(safe-area-inset-bottom,0px) + 96px);}
+  #listBody{flex:1; overflow-y:auto; overflow-x:hidden; -webkit-overflow-scrolling:touch; padding:14px 18px calc(env(safe-area-inset-bottom,0px) + 96px);}
   .list-empty{text-align:center; color:var(--muted); font-size:13.5px; margin-top:60px; line-height:1.6;}
   .record-item{
     background:var(--asphalt-2); border:1px solid var(--line); border-radius:14px;
@@ -128,9 +128,9 @@
   .record-plate-row{display:flex; align-items:center; gap:10px;}
   .record-plate{font-family:'Oswald',sans-serif; font-weight:600; font-size:19px; letter-spacing:.05em;}
   .record-resolved-badge{font-size:11px; font-weight:700; color:var(--bad); text-transform:uppercase; letter-spacing:.05em;}
-  .record-meta{font-family:'Roboto Mono',monospace; font-size:11px; color:var(--muted); margin-top:4px; letter-spacing:.03em;}
-  .record-offense{font-size:13px; color:var(--text); margin-top:8px; line-height:1.4;}
-  .record-submitted{font-size:11px; color:var(--muted); margin-top:6px;}
+  .record-meta{font-family:'Roboto Mono',monospace; font-size:11px; color:var(--muted); margin-top:4px; letter-spacing:.03em; overflow-wrap:anywhere;}
+  .record-offense{font-size:13px; color:var(--text); margin-top:8px; line-height:1.4; overflow-wrap:anywhere;}
+  .record-submitted{font-size:11px; color:var(--muted); margin-top:6px; overflow-wrap:anywhere;}
   .record-officer{font-size:11px; color:var(--muted); margin-top:2px;}
 
   /* ---------- DETAIL ---------- */
@@ -363,7 +363,7 @@
 
       const t2 = performance.now();
       const diag = document.createElement('div');
-      diag.style.cssText = 'text-align:center; color:var(--muted); font-size:10.5px; font-family:monospace; margin-top:14px; opacity:.7;';
+      diag.style.cssText = 'text-align:center; color:var(--muted); font-size:10.5px; font-family:monospace; margin-top:14px; opacity:.7; overflow-wrap:anywhere;';
       diag.textContent = 'Diagnostika: fetch ' + Math.round(t1-t0) + ' ms, render ' + Math.round(t2-t1) + ' ms, ' +
         allRecords.length + ' záznamů, ' + totalKB + ' KB celkem (' + legacyKB + ' KB staré fotky v ' + legacyCount + ' záznamech)';
       document.getElementById('listBody').appendChild(diag);
