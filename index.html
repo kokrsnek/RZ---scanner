@@ -247,6 +247,27 @@
   .submit-note{margin-top:10px; text-align:center; font-size:12.5px; font-family:'Roboto Mono',monospace; display:none;}
   .submit-note.ok{color:var(--good);}
   .submit-note.err{color:var(--bad);}
+  .confirm-overlay{
+    display:none; position:fixed; inset:0; z-index:50; background:rgba(0,0,0,.55);
+    align-items:center; justify-content:center; padding:24px;
+  }
+  .confirm-overlay.open{display:flex;}
+  .confirm-box{
+    background:var(--asphalt-2); border:1px solid var(--line); border-radius:16px;
+    padding:22px 20px; max-width:320px; width:100%; text-align:center;
+  }
+  .confirm-success-text{
+    font-size:13px; color:var(--good); margin-bottom:10px; line-height:1.4;
+    font-family:'Roboto Mono',monospace;
+  }
+  .confirm-text{font-size:15.5px; color:var(--text); margin-bottom:18px; line-height:1.4;}
+  .confirm-btns{display:flex; gap:12px;}
+  .confirm-btn{
+    flex:1; padding:11px 0; border-radius:10px; font-family:'Inter',sans-serif;
+    font-weight:600; font-size:14.5px; cursor:pointer;
+  }
+  .confirm-no{background:transparent; border:1.5px solid var(--line); color:var(--text);}
+  .confirm-yes{background:#2F6FED; border:1.5px solid #2F6FED; color:#fff;}
 
   /* ---------- SCREEN: LOGIN ---------- */
   #loginScreen{align-items:center; justify-content:center; padding:32px;}
@@ -510,6 +531,16 @@
       <div class="saved-note" id="savedNote">✓ Náhled zkontrolován</div>
       <div class="submit-note" id="submitNote"></div>
     </div>
+    <div class="confirm-overlay" id="printConfirmOverlay">
+      <div class="confirm-box">
+        <div class="confirm-success-text" id="printConfirmSuccessText"></div>
+        <div class="confirm-text">Vytisknout výzvu?</div>
+        <div class="confirm-btns">
+          <button class="confirm-btn confirm-no" id="printConfirmNo">Ne</button>
+          <button class="confirm-btn confirm-yes" id="printConfirmYes">Ano</button>
+        </div>
+      </div>
+    </div>
   </div>
 
   <!-- HISTORY -->
@@ -744,13 +775,24 @@
       }
       if(extrasBlocked){
         setSubmitNote('✓ Přestupek odeslán, ale BEZ čísla výzvy a jména strážníka — Firestore pravidla je zatím neumožňují uložit. Je potřeba upravit pravidla v konzoli (přidat "officerName" a "noticeNumber" mezi povolená pole).', 'ok');
+        submitBtn.disabled = true;
+        // Krátká pauza, aby uživatel stihl vidět potvrzení, než appka
+        // přeskočí zpět na úvodní obrazovku připravenou na další přestupek.
+        setTimeout(()=>{ show('start'); }, 1200);
       } else {
-        setSubmitNote(`✓ Přestupek odeslán do přehledu (č. ${noticeNumber})`, 'ok');
+        submitBtn.disabled = true;
+        // Místo automatického přeskočení zpět appka nabídne rovnou tisk
+        // výzvy — číslo jednací i všechna pole už jsou v tuhle chvíli
+        // hotová, takže je to nejpřirozenější okamžik se zeptat.
+        const submittedRecord = { ...lastGeneratedPdf, noticeNumber };
+        const wantsPrint = await askPrintAfterSubmit(`✓ Přestupek odeslán do přehledu (č. ${noticeNumber})`);
+        if(wantsPrint){
+          await printViaStarWebPRNT(submittedRecord);
+          setTimeout(()=>{ show('start'); }, 1200);
+        } else {
+          show('start');
+        }
       }
-      submitBtn.disabled = true;
-      // Krátká pauza, aby uživatel stihl vidět potvrzení, než appka
-      // přeskočí zpět na úvodní obrazovku připravenou na další přestupek.
-      setTimeout(()=>{ show('start'); }, 1200);
     }catch(e){
       console.error('Odeslání do Firestore selhalo:', e);
       setSubmitNote('Odeslání se nezdařilo (' + (e && e.message ? e.message : 'chyba sítě') + '). Zkuste to prosím znovu.', 'err');
@@ -1434,9 +1476,28 @@
       }
     });
   }
-  // Poznámka: tlačítko a UI napojení tisku byly z téhle obrazovky dočasně
-  // odstraněny (viz konverzace) — funkce zůstávají připravené pro pozdější
-  // znovupoužití, jen na ně teď nic v HTML/UI neukazuje.
+
+  // Zobrazí dialog s hláškou o úspěšném odeslání a dotazem "Vytisknout
+  // výzvu?" — vrátí Promise<boolean> podle volby uživatele (Ano/Ne).
+  function askPrintAfterSubmit(successText){
+    return new Promise((resolve)=>{
+      const overlay = document.getElementById('printConfirmOverlay');
+      document.getElementById('printConfirmSuccessText').textContent = successText;
+      const yesBtn = document.getElementById('printConfirmYes');
+      const noBtn = document.getElementById('printConfirmNo');
+      function cleanup(result){
+        overlay.classList.remove('open');
+        yesBtn.removeEventListener('click', onYes);
+        noBtn.removeEventListener('click', onNo);
+        resolve(result);
+      }
+      function onYes(){ cleanup(true); }
+      function onNo(){ cleanup(false); }
+      yesBtn.addEventListener('click', onYes);
+      noBtn.addEventListener('click', onNo);
+      overlay.classList.add('open');
+    });
+  }
 
   // Downscales the captured photo before it goes to Firestore (a raw phone
   // photo can be 8-12+ megapixels — far more than needed, and would blow
@@ -1784,6 +1845,7 @@
   }
   document.getElementById('officerSelect').addEventListener('change', (e)=>{
     saveOfficer(e.target.value);
+    setSubmitNote('', '');
   });
 
   // ---------- Real-usage tracking for "Nejčastěji hledané" ----------
@@ -1834,6 +1896,7 @@
         selectedOffense = o;
         recordOffenseUsage(o);
         updateOffenseDisplay();
+        setSubmitNote('', '');
         show('result');
       });
       container.appendChild(item);
