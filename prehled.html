@@ -501,7 +501,8 @@
     let pPr = '';
     if(opts.align) pPr += '<w:jc w:val="' + opts.align + '"/>';
     if(opts.pageBreakBefore) pPr += '<w:pageBreakBefore/>';
-    pPr += '<w:spacing w:after="' + (opts.spacingAfter != null ? opts.spacingAfter : 0) + '"/>';
+    pPr += '<w:spacing w:before="' + (opts.spacingBefore != null ? opts.spacingBefore : 0) +
+           '" w:after="' + (opts.spacingAfter != null ? opts.spacingAfter : 0) + '"/>';
     const r = text != null ? docxRun(text, opts) : '';
     return '<w:p><w:pPr>' + pPr + '</w:pPr>' + r + '</w:p>';
   }
@@ -612,8 +613,11 @@
 
     body += docxPara('Lustrací byl(a), jako provozovatel výše uvedeného vozidla, zjištěn(a) výše jmenovaný(á).', { size: 20, spacingAfter: 400 });
 
-    body += docxPara('Ing. Martin Lepka', { size: 20 });
-    body += docxPara('ředitel MP Blansko', { size: 20, spacingAfter: 200 });
+    // Podpisový blok + přílohy se odsazují velkou mezerou shora, aby padly
+    // co nejblíž ke spodnímu okraji stránky 1 (přibližné — přesná pozice
+    // závisí na délce textu přestupku u konkrétního záznamu).
+    body += docxPara('Ing. Martin Lepka', { size: 20, spacingBefore: 4600 });
+    body += docxPara('ředitel MP Blansko', { size: 20, spacingAfter: 400 });
     body += docxPara('Přílohy:', { size: 20 });
     body += docxPara('- Výzva', { size: 20 });
     body += docxPara('- fotodokumentace', { size: 20 });
