@@ -962,8 +962,14 @@
     const logo = document.querySelector('.app-logo');
     if(!logo) return;
     let holdTimer = null;
-    const start = ()=>{
+    let startX = 0, startY = 0;
+    const MOVE_TOLERANCE = 24; // px — přirozený mikropohyb prstu při 4s držení nesmí gesto zrušit
+    const start = (e)=>{
       clearTimeout(holdTimer);
+      if(e.touches && e.touches[0]){
+        startX = e.touches[0].clientX;
+        startY = e.touches[0].clientY;
+      }
       holdTimer = setTimeout(()=>{
         const isLight = document.documentElement.classList.toggle('light-theme');
         try{ localStorage.setItem('rzTheme', isLight ? 'light' : 'dark'); }catch(e){}
@@ -972,10 +978,16 @@
       }, 4000);
     };
     const cancel = ()=> clearTimeout(holdTimer);
+    const moveCheck = (e)=>{
+      if(!holdTimer || !e.touches || !e.touches[0]) return;
+      const dx = e.touches[0].clientX - startX;
+      const dy = e.touches[0].clientY - startY;
+      if(Math.hypot(dx, dy) > MOVE_TOLERANCE) cancel();
+    };
     logo.addEventListener('touchstart', start, { passive: true });
     logo.addEventListener('touchend', cancel);
     logo.addEventListener('touchcancel', cancel);
-    logo.addEventListener('touchmove', cancel);
+    logo.addEventListener('touchmove', moveCheck, { passive: true });
     logo.addEventListener('mousedown', start);
     logo.addEventListener('mouseup', cancel);
     logo.addEventListener('mouseleave', cancel);
