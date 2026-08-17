@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>RZ Scanner — Přehled</title>
+<meta name="theme-color" content="#0A0C10">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=Inter:wght@400;500;600;700&family=Roboto+Mono:wght@500;600&display=swap" rel="stylesheet">
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
@@ -26,6 +27,22 @@
     --good:#33D399;
     --bad:#FF6058;
     --line:#262B33;
+  }
+  /* Stejný skrytý světlý režim jako v index.html — volba se přebírá přes
+     localStorage (rzTheme), gesto se ovládá jen na úvodní obrazovce
+     appky, tady se jen respektuje. */
+  html.light-theme{
+    --asphalt:#F4F5F7;
+    --asphalt-2:#FFFFFF;
+    --asphalt-3:#ECEDF0;
+    --ink:#F4F5F7;
+    --amber:#C77800;
+    --amber-dim:#E8B26B;
+    --text:#14161A;
+    --muted:#5B6472;
+    --good:#0E9A6E;
+    --bad:#D4342A;
+    --line:#DDE1E6;
   }
   *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
   html,body{height:100%; overflow-x:hidden; max-width:100vw;}
@@ -232,6 +249,15 @@
 
 <script>
 (function(){
+  // Respektuje volbu tématu nastavenou v index.html (4s podržení loga na
+  // úvodní obrazovce appky) — samotné gesto tady není, jen se drží stejná
+  // paleta jako zbytek appky.
+  try{
+    if(localStorage.getItem('rzTheme') === 'light'){
+      document.documentElement.classList.add('light-theme');
+    }
+  }catch(e){}
+
   const screens = {
     login: document.getElementById('loginScreen'),
     list: document.getElementById('listScreen'),
