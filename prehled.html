@@ -9,9 +9,10 @@
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js" onerror="console.warn('JSZip se nenačetl — export Oznámení jako .docx nebude funkční.')"></script>
 <!-- Star webPRNT SDK — viz komentář v index.html, stejné soubory v /js/ -->
-<script src="StarWebPrintBuilder.js" onerror="console.warn('Star webPRNT SDK nenalezen — tlačítko Tisk nebude funkční.')"></script>
-<script src="StarWebPrintTrader.js" onerror="console.warn('Star webPRNT SDK nenalezen — tlačítko Tisk nebude funkční.')"></script>
+<script src="js/StarWebPrintBuilder.js" onerror="console.warn('Star webPRNT SDK nenalezen — tlačítko Tisk nebude funkční.')"></script>
+<script src="js/StarWebPrintTrader.js" onerror="console.warn('Star webPRNT SDK nenalezen — tlačítko Tisk nebude funkční.')"></script>
 <style>
   :root{
     --asphalt:#0A0C10;
@@ -25,17 +26,6 @@
     --good:#33D399;
     --bad:#FF6058;
     --line:#262B33;
-  }
-  /* Stejný skrytý světlý režim jako v index.html — volba se přebírá přes
-     localStorage (rzTheme), gesto se ovládá jen na úvodní obrazovce
-     appky, tady se jen respektuje. */
-  html.light-theme{
-    --asphalt:#F4F5F7;
-    --asphalt-2:#FFFFFF;
-    --asphalt-3:#E7E9ED;
-    --text:#14171D;
-    --muted:#5B6270;
-    --line:#D8DBE0;
   }
   *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
   html,body{height:100%; overflow-x:hidden; max-width:100vw;}
@@ -94,6 +84,7 @@
     border:1.5px solid var(--line); color:var(--text); background:transparent;
   }
   .list-bottom-btn.print{color:#5B8DEF; border-color:#5B8DEF;}
+  .list-bottom-btn.oznameni{color:#5B8DEF; border-color:#5B8DEF;}
   .list-bottom-btn.resolve{color:var(--good); border-color:var(--good);}
   .list-bottom-btn.resolve[disabled]{background:var(--good); color:#0A0C10; opacity:1;}
   .list-bottom-btn.back{background:var(--amber); border-color:var(--amber); color:#241a00;}
@@ -180,15 +171,6 @@
     font-family:inherit; cursor:pointer; padding:6px 0;
   }
 </style>
-<script>
-  // Stejné obnovení uloženého motivu jako v index.html, ať přehled hned
-  // po otevření sedí na tom, co bylo naposledy zvoleno.
-  try{
-    if(localStorage.getItem('rzTheme') === 'light'){
-      document.documentElement.classList.add('light-theme');
-    }
-  }catch(e){}
-</script>
 </head>
 <body>
 <div id="app">
@@ -239,6 +221,7 @@
       <div class="submit-note" id="detailNote"></div>
       <div class="list-bottom-bar">
         <button class="list-bottom-btn print" id="printBtn" title="Vytisknout">Tisk</button>
+        <button class="list-bottom-btn oznameni" id="oznameniBtn" title="Stáhnout jako Oznámení přestupku (Word)">Oznámení</button>
         <button class="list-bottom-btn resolve" id="resolveBtn">Vyřízeno</button>
         <button class="list-bottom-btn back" id="detailCloseBtn">Zpět</button>
       </div>
@@ -448,14 +431,296 @@
     note.style.display = text ? 'block' : 'none';
   }
 
+  // ---------- Export "Oznámení přestupku" jako skutečný .docx ----------
+  // Skutečný OOXML (.docx) balíček přes JSZip (CDN, žádný build krok) —
+  // ne RTF ani HTML převlečené za .doc. Dvousloupcové rozvržení hlavičky
+  // (adresa úřadu vlevo, č.j./vyřizuje/tel/e-mail/datum vpravo) je běžná
+  // Word tabulka bez viditelných ohraničení.
+  //
+  // Šablona vychází z reálného vzoru "Oznámení přestupku" (Městský úřad
+  // Blansko, odbor dopravy). Appka doplní jen to, co sama zná — číslo
+  // jednací, strážníka, dnešní datum vytvoření, a v textu datum/čas/značku/
+  // adresu (+GPS pokud je uložené)/přestupek. Údaje o provozovateli vozidla
+  // (jméno, datum narození, bydliště) appka nemá k dispozici (zjišťují se
+  // až lustrací na úřadě) — zůstávají prázdné pro ruční doplnění.
+  const OZNAMENI_TEL = '775 859 486, 516 418 418';
+  const OZNAMENI_EMAIL = 'mp@blansko.cz';
+
+  function xmlEscape(str){
+    return String(str == null ? '' : str)
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+      .replace(/"/g,'&quot;').replace(/'/g,'&apos;');
+  }
+
+  function todayCz(){
+    const d = new Date();
+    const pad = n => String(n).padStart(2,'0');
+    return pad(d.getDate()) + '.' + pad(d.getMonth()+1) + '.' + d.getFullYear();
+  }
+
+  function mmToTwips(mm){ return Math.round(mm * 56.6929); }
+  function mmToEmu(mm){ return Math.round(mm * 36000); }
+
+  function docxRun(text, opts){
+    opts = opts || {};
+    let props = '<w:sz w:val="' + (opts.size || 20) + '"/>';
+    if(opts.bold) props += '<w:b/>';
+    if(opts.italic) props += '<w:i/>';
+    if(opts.underline) props += '<w:u w:val="single"/>';
+    return '<w:r><w:rPr>' + props + '</w:rPr><w:t xml:space="preserve">' + xmlEscape(text) + '</w:t></w:r>';
+  }
+
+  function docxPara(text, opts){
+    opts = opts || {};
+    let pPr = '';
+    if(opts.align) pPr += '<w:jc w:val="' + opts.align + '"/>';
+    if(opts.pageBreakBefore) pPr += '<w:pageBreakBefore/>';
+    pPr += '<w:spacing w:after="' + (opts.spacingAfter != null ? opts.spacingAfter : 0) + '"/>';
+    const r = text != null ? docxRun(text, opts) : '';
+    return '<w:p><w:pPr>' + pPr + '</w:pPr>' + r + '</w:p>';
+  }
+
+  function docxHeaderTable(leftLines, rightLines){
+    // Mezisloupec (gutter) mezi adresou úřadu a blokem s č.j. — bez něj by
+    // sloupce splývaly těsně vedle sebe. Pravý blok tak začíná výrazně
+    // víc vpravo, blíž k pravému okraji stránky.
+    const leftW = 3600, gutterW = 2200, rightW = 3226;
+    const cell = (lines, w) => '<w:tc><w:tcPr><w:tcW w:w="' + w + '" w:type="dxa"/></w:tcPr>' +
+      lines.map(t => docxPara(t, { size: 19, spacingAfter: 20 })).join('') + '</w:tc>';
+    const emptyCell = (w) => '<w:tc><w:tcPr><w:tcW w:w="' + w + '" w:type="dxa"/></w:tcPr>' + docxPara('', { size: 19 }) + '</w:tc>';
+    return '<w:tbl><w:tblPr><w:tblW w:w="9026" w:type="dxa"/><w:tblBorders>' +
+      '<w:top w:val="nil"/><w:left w:val="nil"/><w:bottom w:val="nil"/><w:right w:val="nil"/>' +
+      '<w:insideH w:val="nil"/><w:insideV w:val="nil"/></w:tblBorders>' +
+      '<w:tblLayout w:type="fixed"/></w:tblPr>' +
+      '<w:tblGrid><w:gridCol w:w="' + leftW + '"/><w:gridCol w:w="' + gutterW + '"/><w:gridCol w:w="' + rightW + '"/></w:tblGrid>' +
+      '<w:tr>' + cell(leftLines, leftW) + emptyCell(gutterW) + cell(rightLines, rightW) + '</w:tr></w:tbl>';
+  }
+
+  function docxNarrowBoxTable(widthMm, innerXml){
+    const w = mmToTwips(widthMm);
+    return '<w:tbl><w:tblPr><w:tblW w:w="' + w + '" w:type="dxa"/><w:jc w:val="center"/><w:tblBorders>' +
+      '<w:top w:val="single" w:sz="8" w:color="000000"/><w:left w:val="single" w:sz="8" w:color="000000"/>' +
+      '<w:bottom w:val="single" w:sz="8" w:color="000000"/><w:right w:val="single" w:sz="8" w:color="000000"/>' +
+      '</w:tblBorders><w:tblLayout w:type="fixed"/></w:tblPr>' +
+      '<w:tblGrid><w:gridCol w:w="' + w + '"/></w:tblGrid>' +
+      '<w:tr><w:tc><w:tcPr><w:tcW w:w="' + w + '" w:type="dxa"/></w:tcPr>' + innerXml + '</w:tc></w:tr></w:tbl>';
+  }
+
+  function docxImageParagraph(relId, widthPx, heightPx, maxWmm, maxHmm, docId, pageBreakBefore){
+    const aspect = heightPx / widthPx;
+    let wMm = maxWmm, hMm = wMm * aspect;
+    if(hMm > maxHmm){ hMm = maxHmm; wMm = hMm / aspect; }
+    const emuW = mmToEmu(wMm), emuH = mmToEmu(hMm);
+    const drawing = '<w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0">' +
+      '<wp:extent cx="' + emuW + '" cy="' + emuH + '"/>' +
+      '<wp:docPr id="' + docId + '" name="Photo' + docId + '"/>' +
+      '<a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">' +
+      '<a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">' +
+      '<pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture">' +
+      '<pic:nvPicPr><pic:cNvPr id="' + docId + '" name="Photo' + docId + '"/><pic:cNvPicPr/></pic:nvPicPr>' +
+      '<pic:blipFill><a:blip r:embed="rId' + relId + '" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"/>' +
+      '<a:stretch><a:fillRect/></a:stretch></pic:blipFill>' +
+      '<pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="' + emuW + '" cy="' + emuH + '"/></a:xfrm>' +
+      '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic>' +
+      '</a:graphicData></a:graphic></wp:inline></w:drawing>';
+    const pPr = '<w:pPr>' + (pageBreakBefore ? '<w:pageBreakBefore/>' : '') + '<w:jc w:val="center"/></w:pPr>';
+    return '<w:p>' + pPr + '<w:r>' + drawing + '</w:r></w:p>';
+  }
+
+  function getImagePixelSize(dataUrl){
+    return new Promise((resolve)=>{
+      const img = new Image();
+      img.onload = ()=> resolve({ w: img.naturalWidth || 800, h: img.naturalHeight || 600 });
+      img.onerror = ()=> resolve({ w: 800, h: 600 });
+      img.src = dataUrl;
+    });
+  }
+
+  function base64ToUint8Array(base64){
+    const raw = atob(base64);
+    const arr = new Uint8Array(raw.length);
+    for(let i=0;i<raw.length;i++) arr[i] = raw.charCodeAt(i);
+    return arr;
+  }
+
+  async function buildOznameniDocx(record, photosB64){
+    const offenseCitation = record.offenseCitation || '';
+    const offenseLabel = record.offenseLabel || '';
+
+    let body = '';
+    body += docxHeaderTable(
+      ['Městský úřad Blansko', 'Odbor dopravy', 'Oddělení dopravních přestupků', 'Nám. Republiky 1', '678 01 BLANSKO'],
+      [
+        'Naše  č. j.: ' + (record.noticeNumber || ''),
+        'Vyřizuje: str. ' + (record.officerName || ''),
+        'Tel.: ' + OZNAMENI_TEL,
+        'E-mail: ' + OZNAMENI_EMAIL,
+        '',
+        'Datum: ' + todayCz()
+      ]
+    );
+    body += docxPara('', { size: 20 });
+    body += docxPara('Oznámení přestupku', { bold: true, size: 28, align: 'center', spacingAfter: 200 });
+
+    const intro = 'Podle § 10 odst. 2 zák. č. 553/91 Sb., o obecní policii, ve znění pozdějších předpisů, ' +
+      'Vám oznamuji podezření ze spáchání přestupku: Zákon č. 361/2000 Sb., o provozu na ' +
+      'pozemních komunikacích – ' + offenseCitation + ', jímž se dopustil(a) jednání – ' + offenseLabel +
+      ', z jehož spáchání je důvodně podezřelý(á):';
+    body += docxPara(intro, { size: 20, spacingAfter: 200 });
+
+    body += docxPara('Provozovatel vozidla RZ:    ' + (record.plate || ''), { size: 20, spacingAfter: 200 });
+    body += docxPara('Příjmení a jméno: ', { size: 20, spacingAfter: 200 });
+    body += docxPara('Datum narození: ', { size: 20, spacingAfter: 200 });
+    body += docxPara('Bydliště: ', { size: 20, spacingAfter: 200 });
+
+    body += docxPara('Popis skutku:', { bold: true, size: 20, spacingAfter: 100 });
+    let gpsPart = '';
+    if(record.lat != null && record.lng != null){
+      gpsPart = ' (GPS: ' + Number(record.lat).toFixed(6) + ', ' + Number(record.lng).toFixed(6) + ')';
+    }
+    const skutek = 'Dne ' + formatDateCz(record.date) + ' v ' + (record.time || '—') + ' hodin se neustanovený ' +
+      'řidič vozidla registrační značky ' + (record.plate || '') + '. Na ulici ' + (record.address || '') +
+      gpsPart + ' dopustil porušení ustanovení – ' + offenseLabel +
+      ', a tím je podezřelý ze spáchání přestupku dle ' + offenseCitation;
+    body += docxPara(skutek, { size: 20, spacingAfter: 200 });
+
+    body += docxPara('Lustrací byl(a), jako provozovatel výše uvedeného vozidla, zjištěn(a) výše jmenovaný(á).', { size: 20, spacingAfter: 400 });
+
+    body += docxPara('Ing. Martin Lepka', { size: 20 });
+    body += docxPara('ředitel MP Blansko', { size: 20, spacingAfter: 200 });
+    body += docxPara('Přílohy:', { size: 20 });
+    body += docxPara('- Výzva', { size: 20 });
+    body += docxPara('- fotodokumentace', { size: 20 });
+
+    // Fotky — každá na vlastní A4 stránce v běžné velikosti.
+    const mediaFiles = [];
+    const relEntries = [];
+    let relId = 100;
+    let docId = 1;
+
+    if(photosB64.length){
+      body += docxPara('Fotodokumentace', { bold: true, size: 24, align: 'center', spacingAfter: 200, pageBreakBefore: true });
+      for(let i=0;i<photosB64.length;i++){
+        const dims = await getImagePixelSize('data:image/jpeg;base64,' + photosB64[i]);
+        const filename = 'image' + (i + 1) + '.jpeg';
+        mediaFiles.push({ name: filename, bytes: base64ToUint8Array(photosB64[i]) });
+        relEntries.push({ id: relId, target: 'media/' + filename });
+        body += docxImageParagraph(relId, dims.w, dims.h, 170, 240, docId, i > 0);
+        relId++; docId++;
+      }
+    }
+
+    // Výzva — úzký orámovaný blok v šíři 58 mm (odpovídá reálné šířce tiskárny).
+    body += docxPara('Výzva', { bold: true, size: 24, align: 'center', spacingAfter: 200, pageBreakBefore: true });
+    let inner = '';
+    inner += docxPara('VÝZVA', { bold: true, size: 22, align: 'center' });
+    inner += docxPara('pro nepřítomného pachatele přestupku', { size: 14, align: 'center' });
+    if(record.noticeNumber) inner += docxPara('Č. j.: ' + record.noticeNumber, { size: 12, align: 'center', spacingAfter: 100 });
+    inner += docxPara(record.plate || '', { bold: true, size: 32, align: 'center' });
+    inner += docxPara('Datum: ' + formatDateCz(record.date) + '  Čas: ' + (record.time || '—'), { size: 14, align: 'center', spacingAfter: 100 });
+    if(record.address){
+      inner += docxPara('Místo přestupku', { bold: true, size: 13, align: 'center' });
+      inner += docxPara(record.address, { size: 14, align: 'center', spacingAfter: 100 });
+    }
+    if(offenseLabel){
+      inner += docxPara('Právní kvalifikace', { bold: true, size: 13, align: 'center' });
+      inner += docxPara(offenseLabel, { size: 14, align: 'center' });
+      if(offenseCitation) inner += docxPara(offenseCitation, { size: 11, align: 'center' });
+    }
+    body += docxNarrowBoxTable(58, inner);
+
+    const documentXml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n' +
+      '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" ' +
+      'xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" ' +
+      'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">' +
+      '<w:body>' + body +
+      '<w:sectPr><w:pgSz w:w="11906" w:h="16838"/>' +
+      '<w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="708" w:footer="708" w:gutter="0"/>' +
+      '</w:sectPr></w:body></w:document>';
+
+    const contentTypes = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n' +
+      '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">' +
+      '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>' +
+      '<Default Extension="xml" ContentType="application/xml"/>' +
+      '<Default Extension="jpeg" ContentType="image/jpeg"/>' +
+      '<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>' +
+      '</Types>';
+
+    const rootRels = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n' +
+      '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+      '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>' +
+      '</Relationships>';
+
+    const docRels = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n' +
+      '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+      relEntries.map(e => '<Relationship Id="rId' + e.id + '" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="' + e.target + '"/>').join('') +
+      '</Relationships>';
+
+    const zip = new JSZip();
+    zip.file('[Content_Types].xml', contentTypes);
+    zip.file('_rels/.rels', rootRels);
+    zip.file('word/document.xml', documentXml);
+    zip.file('word/_rels/document.xml.rels', docRels);
+    mediaFiles.forEach(m => zip.file('word/media/' + m.name, m.bytes));
+
+    return zip.generateAsync({
+      type: 'blob',
+      mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+    });
+  }
+
+  async function exportOznameni(record){
+    const btn = document.getElementById('oznameniBtn');
+    const originalText = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = 'Připravuji…';
+    try{
+      if(typeof JSZip === 'undefined'){
+        setDetailNote('Export do Wordu se nepodařilo načíst (chybí knihovna JSZip — zkontrolujte připojení k internetu).', 'err');
+        return;
+      }
+      // Fotky mohly být v této session už dřív načtené (viz openDetail /
+      // loadAndShowPhotos) — jinak je stejným způsobem dotáhneme teď.
+      let photosB64 = record._resolvedPhotos;
+      if(!photosB64 && record.hasPhotos){
+        const doc = await db.collection('prestupky').doc(record.id).collection('data').doc('photos').get();
+        const data = doc.exists ? doc.data() : null;
+        photosB64 = (data && data.photos) || [];
+        record._resolvedPhotos = photosB64;
+        record._resolvedMime = (data && data.photoMime) || 'image/jpeg';
+      }
+      const blob = await buildOznameniDocx(record, photosB64 || []);
+      const filename = 'Oznameni_' + (record.plate || 'prestupek').replace(/\s+/g,'') + '.docx';
+      try{
+        const file = new File([blob], filename, { type: blob.type });
+        if(navigator.canShare && navigator.canShare({ files: [file] })){
+          await navigator.share({ files: [file] });
+          return;
+        }
+      }catch(e){
+        // Uživatel sdílení zrušil nebo API není k dispozici — spadneme na
+        // otevření v nové kartě, stejně jako u ukládání fotek.
+      }
+      const url = URL.createObjectURL(blob);
+      window.open(url, '_blank');
+      setTimeout(()=> URL.revokeObjectURL(url), 60000);
+    }catch(e){
+      console.error('Export Oznámení selhal:', e);
+      setDetailNote('Vytvoření dokumentu se nezdařilo (' + e.message + ').', 'err');
+    }finally{
+      btn.disabled = false;
+      btn.textContent = originalText;
+    }
+  }
+
   // ---------- Tisk na Bluetooth tiskárnu (Star SM-T300i / WSP-i350) ----------
   // Stejná logika jako v index.html — appka musí být otevřená v appce
   // "Star webPRNT Browser", tiskárna se vybírá jednou v iOS Nastavení →
   // Star webPRNT, ne tady v kódu. Viz podrobný komentář v index.html.
   // Služební čísla strážníků — na vytištěné výzvě (fyzicky vydávané) se
   // z bezpečnostních důvodů posílá jen služební číslo, ne celé jméno.
-  // Jméno zůstává beze změny v appce samotné (přehled, detail) i na
-  // vygenerované HTML kartě výzvy — mění se jen text, co jde do tiskárny.
+  // Jméno zůstává beze změny v appce samotné (přehled, detail, export
+  // Oznámení do Wordu) — mění se jen text, co jde do tiskárny.
   const OFFICER_BADGE_NUMBERS = {
     'Adámek Jaroslav': '995',
     'Grénar Martin': '1774',
@@ -496,7 +761,7 @@
     }
     req += builder.createTextElement({ data: '\nREGISTRAČNÍ ZNAČKA\n' });
     req += builder.createTextElement({ data: (record.plate || '') + '\n', width: 3, height: 3, emphasis: true });
-    req += builder.createRuledLineElement({ thickness: 'thin', width: 384 });
+    req += builder.createRuledLineElement({ thickness: 2, lineWidth: 384 });
     req += builder.createTextElement({
       data: 'Datum: ' + formatDateCz(record.date) + '   Čas: ' + (record.time || '—') + '\n\n'
     });
@@ -551,21 +816,13 @@
         const request = buildStarPrintRequest(record);
         const trader = new StarWebPrintTrader({ url: 'https://localhost/StarWebPRNT/SendMessage' });
         trader.onReceive = function(response){
-          const ok = !!(response && (response.traderSuccess === true || response.success === true));
-          const detail = response
-            ? ' [traderSuccess:' + response.traderSuccess + ' traderCode:' + response.traderCode +
-              ' traderStatus:' + response.traderStatus + ' status:' + response.status +
-              (response.responseText ? ' text:' + response.responseText : '') + ']'
-            : '';
-          setDetailNote((ok ? '✓ Vytištěno' : 'Tiskárna nahlásila chybu.') + detail, ok ? 'ok' : 'err');
+          const ok = !!(response && response.success);
+          setDetailNote(ok ? '✓ Vytištěno' : 'Tiskárna nahlásila chybu.', ok ? 'ok' : 'err');
           if(ok) currentRecordPrinted = true;
           resolve(ok);
         };
         trader.onError = function(error){
-          const detail = error
-            ? ' (status: ' + error.status + (error.responseText ? ', ' + error.responseText : '') + ')'
-            : '';
-          setDetailNote('Tisk se nezdařil' + detail + '.', 'err');
+          setDetailNote('Tisk se nezdařil: ' + (error && error.status || 'zkontroluj spárování tiskárny.'), 'err');
           resolve(false);
         };
         trader.sendMessage({ request: request });
@@ -774,6 +1031,10 @@
 
   document.getElementById('printBtn').addEventListener('click', ()=>{
     if(currentDetailRecord) printViaStarWebPRNT(currentDetailRecord);
+  });
+
+  document.getElementById('oznameniBtn').addEventListener('click', ()=>{
+    if(currentDetailRecord) exportOznameni(currentDetailRecord);
   });
 
   document.getElementById('resolveBtn').addEventListener('click', async ()=>{
