@@ -413,6 +413,34 @@
     margin-bottom:16px; cursor:pointer; text-align:center; color:var(--bad); font-size:13px;
   }
 
+  /* Tovární značka — celoobrazovkový výběr s A–Z rejstříkem po levé straně */
+  #brandScreen{padding:calc(env(safe-area-inset-top,0px) + 20px) 0 0;}
+  #brandScreen .history-header{padding:0 20px; flex-shrink:0;}
+  .az-picker{display:flex; flex:1; min-height:0; margin-top:12px;}
+  .az-index{
+    width:38px; flex-shrink:0; overflow-y:auto; -webkit-overflow-scrolling:touch;
+    display:flex; flex-direction:column; align-items:center; gap:2px;
+    padding:4px 0 24px; scrollbar-width:none;
+  }
+  .az-index::-webkit-scrollbar{display:none;}
+  .az-index-letter{
+    width:28px; height:28px; flex-shrink:0; border-radius:50%;
+    display:flex; align-items:center; justify-content:center;
+    font-family:'Roboto Mono',monospace; font-size:12.5px; font-weight:700; color:var(--muted);
+  }
+  .az-index-letter.enabled{cursor:pointer; color:var(--text);}
+  .az-index-letter.active{background:var(--amber); color:#241a00;}
+  .az-list{
+    flex:1; min-width:0; overflow-y:auto; -webkit-overflow-scrolling:touch; overscroll-behavior:contain;
+    padding:0 20px calc(env(safe-area-inset-bottom,0px) + 30px);
+  }
+  .az-list-item{
+    padding:15px 2px; border-bottom:1px solid var(--line); font-size:16px; color:var(--text); cursor:pointer;
+  }
+  .az-list-item:active{opacity:.55;}
+  .az-list-item.clear{color:var(--muted);}
+  .az-list-empty{text-align:center; color:var(--muted); font-size:13.5px; margin-top:40px;}
+
   canvas{display:none;}
 </style>
 </head>
@@ -485,9 +513,10 @@
       <div class="confidence" id="confidenceRow" style="display:none;"></div>
 
       <div class="field-row">
-        <div class="field field-center">
+        <div class="field offense-field field-center" id="brandTrigger">
           <label>Tovární značka</label>
-          <select id="brandSelect" class="officer-select">
+          <div class="offense-value empty" id="brandDisplay">Vyber značku</div>
+          <select id="brandSelect" class="officer-select" style="display:none;">
             <option value="">Vyber značku</option>
             <option>Škoda</option>
             <option>Volkswagen</option>
@@ -655,6 +684,18 @@
     <div id="offenseList"></div>
   </div>
 
+  <!-- BRAND PICKER (A–Z index) -->
+  <div id="brandScreen" class="screen">
+    <div class="history-header">
+      <button class="history-back" id="brandBackBtn">←</button>
+      <h2>Tovární značka</h2>
+    </div>
+    <div class="az-picker">
+      <div class="az-index" id="brandAzIndex"></div>
+      <div class="az-list" id="brandList"></div>
+    </div>
+  </div>
+
   <!-- ADDRESS PICKER -->
   <div id="addressScreen" class="screen">
     <div class="history-header">
@@ -747,6 +788,7 @@
     history: document.getElementById('historyScreen'),
     offense: document.getElementById('offenseScreen'),
     address: document.getElementById('addressScreen'),
+    brand: document.getElementById('brandScreen'),
     login: document.getElementById('loginScreen'),
     pdfPreview: document.getElementById('pdfPreviewScreen'),
   };
@@ -1508,7 +1550,7 @@
     const colorSelect = document.getElementById('colorSelect');
     if(brand){
       const match = [...brandSelect.options].find(o => o.value && o.value.toLowerCase() === String(brand).toLowerCase());
-      if(match) brandSelect.value = match.value;
+      if(match){ brandSelect.value = match.value; updateBrandDisplay(); }
     }
     if(color){
       const czColor = MMC_COLOR_MAP[String(color).toLowerCase()];
@@ -1537,7 +1579,7 @@
     const match = [...brandSelect.options].find(o => o.value && (
       o.value.toLowerCase() === needle || needle.includes(o.value.toLowerCase())
     ));
-    if(match) brandSelect.value = match.value;
+    if(match){ brandSelect.value = match.value; updateBrandDisplay(); }
   }
 
   // ---------- Zdarma lokální odhad barvy vozidla z fotky ----------
@@ -1717,6 +1759,7 @@
     // Značka/barva se resetují pro každý nový snímek — appka je případně
     // znovu předvyplní podle MMC výsledku (viz applyRecognizedBrandColor).
     document.getElementById('brandSelect').value = '';
+    updateBrandDisplay();
     document.getElementById('colorSelect').value = '';
 
     selectedOffense = null;
@@ -2410,6 +2453,99 @@
   document.getElementById('offenseTrigger').addEventListener('click', openOffensePicker);
   document.getElementById('offenseBackBtn').addEventListener('click', ()=> show('result'));
   document.getElementById('offenseSearch').addEventListener('input', (e)=> renderOffenseList(e.target.value));
+
+  // ---------- Tovární značka: celoobrazovkový výběr s A–Z rejstříkem ----------
+  // Skutečný <select id="brandSelect"> zůstává v DOM jako datový zdroj
+  // (skrytý), ať zbytek appky (MMC/Vision auto-vyplnění, reset, odeslání)
+  // funguje beze změny — mění se jen způsob výběru na obrazovce.
+  let brandActiveLetter = null;
+
+  function brandFirstLetter(name){
+    // Odstraní diakritiku jen pro řazení do rejstříku (Č → C), zobrazený
+    // název značky zůstává beze změny.
+    return name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').charAt(0).toUpperCase();
+  }
+
+  function getBrandOptions(){
+    return [...document.getElementById('brandSelect').options]
+      .map(o => o.value).filter(Boolean);
+  }
+
+  function renderBrandAzIndex(){
+    const container = document.getElementById('brandAzIndex');
+    container.innerHTML = '';
+    const available = new Set(getBrandOptions().map(brandFirstLetter));
+    'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('').forEach(letter=>{
+      const el = document.createElement('div');
+      const enabled = available.has(letter);
+      el.className = 'az-index-letter' + (enabled ? ' enabled' : '') + (brandActiveLetter === letter ? ' active' : '');
+      el.textContent = letter;
+      if(enabled){
+        el.addEventListener('click', ()=>{
+          brandActiveLetter = (brandActiveLetter === letter) ? null : letter;
+          renderBrandAzIndex();
+          renderBrandList();
+        });
+      }
+      container.appendChild(el);
+    });
+  }
+
+  function selectBrand(name){
+    document.getElementById('brandSelect').value = name;
+    updateBrandDisplay();
+    show('result');
+  }
+
+  function renderBrandList(){
+    const container = document.getElementById('brandList');
+    container.innerHTML = '';
+    const all = getBrandOptions();
+    const list = brandActiveLetter ? all.filter(b => brandFirstLetter(b) === brandActiveLetter) : all;
+
+    if(!brandActiveLetter){
+      const clearItem = document.createElement('div');
+      clearItem.className = 'az-list-item clear';
+      clearItem.textContent = 'Neuvedeno';
+      clearItem.addEventListener('click', ()=> selectBrand(''));
+      container.appendChild(clearItem);
+    }
+
+    if(!list.length){
+      container.innerHTML += '<div class="az-list-empty">Žádná značka na toto písmeno.</div>';
+      return;
+    }
+
+    list.forEach(name=>{
+      const item = document.createElement('div');
+      item.className = 'az-list-item';
+      item.textContent = name;
+      item.addEventListener('click', ()=> selectBrand(name));
+      container.appendChild(item);
+    });
+  }
+
+  function updateBrandDisplay(){
+    const display = document.getElementById('brandDisplay');
+    const val = document.getElementById('brandSelect').value;
+    if(val){
+      display.textContent = val;
+      display.classList.remove('empty');
+    } else {
+      display.textContent = 'Vyber značku';
+      display.classList.add('empty');
+    }
+  }
+
+  function openBrandPicker(){
+    brandActiveLetter = null;
+    renderBrandAzIndex();
+    renderBrandList();
+    show('brand');
+  }
+
+  document.getElementById('brandTrigger').addEventListener('click', openBrandPicker);
+  document.getElementById('brandBackBtn').addEventListener('click', ()=> show('result'));
 
   // ---------- Address picker: streets in Blansko + its local parts ----------
   // Fetched live from OpenStreetMap (RÚIAN-sourced address points), not a
