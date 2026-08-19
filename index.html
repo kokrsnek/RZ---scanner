@@ -536,19 +536,26 @@
           <select id="colorSelect" class="officer-select">
             <option value="">Vyber barvu</option>
             <option>Bílá</option>
-            <option>Černá</option>
-            <option>Šedá</option>
             <option>Stříbrná</option>
+            <option>Šedá</option>
+            <option>Tmavě šedá</option>
+            <option>Černá</option>
             <option>Modrá</option>
-            <option>Červená</option>
+            <option>Světle modrá</option>
+            <option>Tmavě modrá</option>
+            <option>Tyrkysová</option>
             <option>Zelená</option>
+            <option>Tmavě zelená</option>
             <option>Žlutá</option>
-            <option>Hnědá</option>
-            <option>Oranžová</option>
-            <option>Fialová</option>
-            <option>Béžová</option>
             <option>Zlatá</option>
             <option>Bronzová</option>
+            <option>Oranžová</option>
+            <option>Hnědá</option>
+            <option>Béžová</option>
+            <option>Červená</option>
+            <option>Tmavě červená</option>
+            <option>Růžová</option>
+            <option>Fialová</option>
           </select>
         </div>
       </div>
@@ -1486,9 +1493,14 @@
   // "Škoda" apod. v běžném tvaru.
   const MMC_COLOR_MAP = {
     'white':'Bílá', 'black':'Černá', 'gray':'Šedá', 'grey':'Šedá',
-    'silver':'Stříbrná', 'blue':'Modrá', 'red':'Červená', 'green':'Zelená',
+    'dark gray':'Tmavě šedá', 'dark grey':'Tmavě šedá', 'charcoal':'Tmavě šedá',
+    'silver':'Stříbrná', 'blue':'Modrá', 'light blue':'Světle modrá',
+    'dark blue':'Tmavě modrá', 'navy':'Tmavě modrá', 'turquoise':'Tyrkysová',
+    'cyan':'Tyrkysová', 'teal':'Tyrkysová', 'red':'Červená', 'maroon':'Tmavě červená',
+    'dark red':'Tmavě červená', 'green':'Zelená', 'dark green':'Tmavě zelená',
     'yellow':'Žlutá', 'brown':'Hnědá', 'orange':'Oranžová', 'violet':'Fialová',
-    'purple':'Fialová', 'beige':'Béžová', 'gold':'Zlatá', 'bronze':'Bronzová'
+    'purple':'Fialová', 'pink':'Růžová', 'beige':'Béžová', 'tan':'Béžová',
+    'cream':'Béžová', 'gold':'Zlatá', 'bronze':'Bronzová'
   };
 
   function applyRecognizedBrandColor(brand, color){
@@ -1555,19 +1567,28 @@
 
   function classifyColorBucket(h, s, l){
     if(l > 0.82) return 'Bílá';
-    if(l < 0.13) return 'Černá';
-    if(s < 0.14) return l > 0.45 ? 'Stříbrná' : 'Šedá';
-    if(h < 14 || h >= 346) return 'Červená';
+    if(l < 0.10) return 'Černá';
+    if(s < 0.14){
+      if(l < 0.30) return 'Tmavě šedá';
+      return l > 0.45 ? 'Stříbrná' : 'Šedá';
+    }
+    if(h < 14 || h >= 350) return l < 0.28 ? 'Tmavě červená' : 'Červená';
     if(h < 40){
       if(l < 0.32) return 'Hnědá';
       if(l > 0.72 && s < 0.45) return 'Béžová';
       return 'Oranžová';
     }
-    if(h < 70) return l < 0.45 ? 'Bronzová' : 'Žlutá';
-    if(h < 170) return 'Zelená';
-    if(h < 255) return 'Modrá';
-    if(h < 320) return 'Fialová';
-    return 'Červená';
+    if(h < 65) return l < 0.40 ? 'Bronzová' : 'Žlutá';
+    if(h < 160) return l < 0.28 ? 'Tmavě zelená' : 'Zelená';
+    if(h < 195) return 'Tyrkysová';
+    if(h < 260){
+      if(l > 0.68) return 'Světle modrá';
+      if(l < 0.26) return 'Tmavě modrá';
+      return 'Modrá';
+    }
+    if(h < 290) return 'Fialová';
+    if(h < 330) return 'Růžová';
+    return l < 0.28 ? 'Tmavě červená' : 'Červená';
   }
 
   function detectDominantVehicleColor(dataUrl, plateBox){
