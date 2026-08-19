@@ -512,6 +512,21 @@
     return '<w:p><w:pPr>' + pPr + '</w:pPr>' + r + '</w:p>';
   }
 
+  // Odstavec "štítek" + skutečný tabulátor na pevnou pozici + "hodnota" —
+  // na rozdíl od ručně vyťukaných mezer se tak hodnoty u různě dlouhých
+  // štítků (RZ vs. tovární značka/barva) zarovnají přesně pod sebe.
+  function docxLabelValuePara(label, value, opts){
+    opts = opts || {};
+    const tabPos = opts.tabPos != null ? opts.tabPos : 2600;
+    const pPr = '<w:tabs><w:tab w:val="left" w:pos="' + tabPos + '"/></w:tabs>' +
+      '<w:spacing w:before="' + (opts.spacingBefore != null ? opts.spacingBefore : 0) +
+      '" w:after="' + (opts.spacingAfter != null ? opts.spacingAfter : 0) + '"/>';
+    const labelRun = docxRun(label, { size: opts.size || 20 });
+    const tabRun = '<w:r><w:rPr><w:sz w:val="' + (opts.size || 20) + '"/></w:rPr><w:tab/></w:r>';
+    const valueRun = docxRun(value, { size: opts.size || 20, bold: opts.valueBold });
+    return '<w:p><w:pPr>' + pPr + '</w:pPr>' + labelRun + tabRun + valueRun + '</w:p>';
+  }
+
   function docxHeaderTable(leftLines, rightLines){
     // Mezisloupec (gutter) mezi adresou úřadu a blokem s č.j. — bez něj by
     // sloupce splývaly těsně vedle sebe. Pravý blok tak začíná výrazně
@@ -600,9 +615,9 @@
       ', z jehož spáchání je důvodně podezřelý(á):';
     body += docxPara(intro, { size: 20, spacingAfter: 200 });
 
-    body += docxPara('Provozovatel vozidla RZ:    ' + (record.plate || ''), { size: 20, spacingAfter: 200 });
+    body += docxLabelValuePara('Provozovatel vozidla RZ:', record.plate || '', { size: 20, spacingAfter: 200, valueBold: true });
     if(record.brand || record.color){
-      body += docxPara('Tovární značka, barva:    ' + [record.brand, record.color].filter(Boolean).join(', '), { size: 20, spacingAfter: 200 });
+      body += docxLabelValuePara('Tovární značka, barva:', [record.brand, record.color].filter(Boolean).join(', '), { size: 20, spacingAfter: 200 });
     }
     body += docxPara('Příjmení a jméno: ', { size: 20, spacingAfter: 200 });
     body += docxPara('Datum narození: ', { size: 20, spacingAfter: 200 });
