@@ -1220,8 +1220,10 @@
     // Runs in parallel with plate recognition — no reason to make the person
     // wait twice for two separate network round-trips.
     const locationPromise = getLocationAndAddress();
+    // Zdarma lokální odhad barvy — běží souběžně, žádné volání ven.
+    const colorDetectPromise = detectDominantVehicleColor(fullShotDataUrl);
 
-    const [, location] = await Promise.all([platePromise, locationPromise]);
+    const [, location, locallyDetectedColor] = await Promise.all([platePromise, locationPromise, colorDetectPromise]);
 
     // If nothing was recognized and there's no technical error to explain
     // why (bad photo, unclear plate, etc.), don't bother showing an error
@@ -1234,6 +1236,7 @@
 
     populateResult(recognizedText, confidence, ocrErrorMessage, location);
     applyRecognizedBrandColor(recognizedBrand, recognizedColor);
+    applyDetectedColor(locallyDetectedColor);
     show('result');
   }
 
@@ -1443,6 +1446,94 @@
         if(match) colorSelect.value = match.value;
       }
     }
+  }
+
+  function applyDetectedColor(czColor){
+    if(!czColor) return;
+    const colorSelect = document.getElementById('colorSelect');
+    if(colorSelect.value) return; // placený MMC už barvu vyplnil — nepřepisovat
+    const match = [...colorSelect.options].find(o => o.value === czColor);
+    if(match) colorSelect.value = match.value;
+  }
+
+  // ---------- Zdarma lokální odhad barvy vozidla z fotky ----------
+  // Bez placeného MMC doplňku appka spočítá převažující barvu karoserie
+  // přímo v telefonu (canvas, žádné volání ven, žádné náklady). Nejde o
+  // dokonalé rozpoznávání (fotka není segmentovaná — auto/pozadí), ale pro
+  // rychlé předvyplnění základní barvy to ve většině fotek stačí. Strážník
+  // si výsledek samozřejmě může kdykoli ručně přepsat.
+  function rgbToHsl(r, g, b){
+    r /= 255; g /= 255; b /= 255;
+    const max = Math.max(r,g,b), min = Math.min(r,g,b);
+    let h, s, l = (max + min) / 2;
+    if(max === min){
+      h = s = 0;
+    } else {
+      const d = max - min;
+      s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+      switch(max){
+        case r: h = (g - b) / d + (g < b ? 6 : 0); break;
+        case g: h = (b - r) / d + 2; break;
+        default: h = (r - g) / d + 4;
+      }
+      h /= 6;
+    }
+    return { h: h * 360, s, l };
+  }
+
+  function classifyColorBucket(h, s, l){
+    if(l > 0.90) return 'Bílá';
+    if(l < 0.13) return 'Černá';
+    if(s < 0.14) return l > 0.55 ? 'Stříbrná' : 'Šedá';
+    if(h < 14 || h >= 346) return 'Červená';
+    if(h < 40){
+      if(l < 0.32) return 'Hnědá';
+      if(l > 0.72 && s < 0.45) return 'Béžová';
+      return 'Oranžová';
+    }
+    if(h < 70) return l < 0.45 ? 'Bronzová' : 'Žlutá';
+    if(h < 170) return 'Zelená';
+    if(h < 255) return 'Modrá';
+    if(h < 320) return 'Fialová';
+    return 'Červená';
+  }
+
+  function detectDominantVehicleColor(dataUrl){
+    return new Promise((resolve)=>{
+      const img = new Image();
+      img.onload = ()=>{
+        try{
+          const w = 80, h = Math.max(1, Math.round(80 * img.height / img.width));
+          const canvas = document.createElement('canvas');
+          canvas.width = w; canvas.height = h;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, w, h);
+          const data = ctx.getImageData(0, 0, w, h).data;
+          const counts = {};
+          // Vzorkuje jen střed fotky — auto podle rámečku v kameře vyplňuje
+          // většinu záběru, okraje (podlaha/strop/nebe) se raději vynechají.
+          const x0 = Math.round(w * 0.12), x1 = Math.round(w * 0.88);
+          const y0 = Math.round(h * 0.20), y1 = Math.round(h * 0.85);
+          for(let y = y0; y < y1; y++){
+            for(let x = x0; x < x1; x++){
+              const i = (y * w + x) * 4;
+              const { h: hue, s, l } = rgbToHsl(data[i], data[i+1], data[i+2]);
+              const bucket = classifyColorBucket(hue, s, l);
+              counts[bucket] = (counts[bucket] || 0) + 1;
+            }
+          }
+          let best = null, bestCount = 0;
+          for(const k in counts){
+            if(counts[k] > bestCount){ bestCount = counts[k]; best = k; }
+          }
+          resolve(best);
+        }catch(e){
+          resolve(null);
+        }
+      };
+      img.onerror = ()=> resolve(null);
+      img.src = dataUrl;
+    });
   }
 
   function cleanPlate(raw){
