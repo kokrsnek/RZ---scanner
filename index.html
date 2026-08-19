@@ -331,6 +331,7 @@
     padding:12px 26px; font-family:'Oswald',sans-serif; font-weight:700; font-size:30px;
     letter-spacing:.04em; margin-bottom:16px;
   }
+  .notice-vehicle{font-size:14px; color:#555; margin:-8px 0 18px; font-weight:600;}
   .notice-datetime{font-size:15.5px; margin-bottom:20px; color:#222;}
   .notice-section{margin-bottom:16px;}
   .notice-heading{font-weight:700; font-size:12px; display:inline-block; border-bottom:1.5px solid #181818; padding-bottom:3px; margin-bottom:8px;}
@@ -1543,6 +1544,8 @@
       <div class="notice-number"><b>Č. j.: ${escapeHtml(record.noticeNumber)}</b></div>` : '';
     const officerBlock = record.officerName ? `
       <div class="notice-officer">str. ${escapeHtml(record.officerName)}</div>` : '';
+    const vehicleBlock = (record.brand || record.color) ? `
+      <div class="notice-vehicle">${escapeHtml([record.brand, record.color].filter(Boolean).join(', '))}</div>` : '';
     return `
       <div class="notice-card">
         <div class="notice-title">Výzva</div>
@@ -1550,6 +1553,7 @@
         ${numberBlock}
         <div class="notice-label">Registrační značka</div>
         <div class="notice-platebox">${escapeHtml(record.plate || '')}</div>
+        ${vehicleBlock}
         <div class="notice-datetime">Datum: ${escapeHtml(formatDateCz(record.date))}&nbsp;&nbsp;&nbsp;Čas: ${escapeHtml(record.time || '—')}</div>
         ${addressBlock}
         ${offenseBlock}
