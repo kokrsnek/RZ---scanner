@@ -601,6 +601,9 @@
     body += docxPara(intro, { size: 20, spacingAfter: 200 });
 
     body += docxPara('Provozovatel vozidla RZ:    ' + (record.plate || ''), { size: 20, spacingAfter: 200 });
+    if(record.brand || record.color){
+      body += docxPara('Tovární značka, barva:    ' + [record.brand, record.color].filter(Boolean).join(', '), { size: 20, spacingAfter: 200 });
+    }
     body += docxPara('Příjmení a jméno: ', { size: 20, spacingAfter: 200 });
     body += docxPara('Datum narození: ', { size: 20, spacingAfter: 200 });
     body += docxPara('Bydliště: ', { size: 20, spacingAfter: 200 });
@@ -621,7 +624,7 @@
     // Podpisový blok + přílohy se odsazují velkou mezerou shora, aby padly
     // co nejblíž ke spodnímu okraji stránky 1 (přibližné — přesná pozice
     // závisí na délce textu přestupku u konkrétního záznamu).
-    body += docxPara('Ing. Martin Lepka', { size: 20, spacingBefore: 4600 });
+    body += docxPara('Ing. Martin Lepka', { size: 20, spacingBefore: 4120 });
     body += docxPara('ředitel MP Blansko', { size: 20, spacingAfter: 400 });
     body += docxPara('Přílohy:', { size: 20 });
     body += docxPara('- Výzva', { size: 20 });
