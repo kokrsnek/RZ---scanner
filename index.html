@@ -696,6 +696,32 @@
 
 <script>
 (function(){
+  // ---------- Nastavení API klíčů přes odkaz (setup link) ----------
+  // Po smazání a novém přidání appky na plochu iOS vytvoří nový, prázdný
+  // úložný kontejner (localStorage se vynuluje) — appka se pak znovu zeptá
+  // na klíče. Aby se nemusely přepisovat na telefonní klávesnici, appka
+  // umí klíče převzít rovnou z URL (?prToken=...&visionKey=...), uložit je
+  // do localStorage a hned je z adresy smazat, ať nezůstanou viditelné
+  // v historii prohlížeče. Takový odkaz (s klíči) je nutné držet stejně
+  // soukromě jako klíče samotné — uložit si ho třeba do Poznámek, nikdy
+  // nikam veřejně nesdílet ani neposílat přes nezabezpečený kanál.
+  try{
+    const params = new URLSearchParams(window.location.search);
+    let changed = false;
+    if(params.has('prToken')){
+      localStorage.setItem('plateRecognizerToken', params.get('prToken').trim());
+      changed = true;
+    }
+    if(params.has('visionKey')){
+      localStorage.setItem('googleVisionApiKey', params.get('visionKey').trim());
+      changed = true;
+    }
+    if(changed){
+      const cleanUrl = window.location.origin + window.location.pathname;
+      window.history.replaceState({}, document.title, cleanUrl);
+    }
+  }catch(e){}
+
   // Skrytý přepínač světlý/tmavý režim — 4s podržení loga na úvodní
   // obrazovce. Žádné viditelné tlačítko ani nápověda, jen gesto. Volba se
   // pamatuje přes localStorage a appka ji při startu rovnou uplatní, ať
@@ -1175,7 +1201,7 @@
     // can reuse it without triggering another permission prompt. The stream
     // is only fully released via the ✕ button on the camera screen.
     video.srcObject = null;
-    finishCapture(fullShot, cropCanvas);
+    finishCapture(fullShot, cropCanvas, { x: cropX, y: cropY, w: cropW, h: cropH, fullW: vw, fullH: vh });
   });
 
   document.getElementById('thumbWrap').addEventListener('click', openCamera);
@@ -1206,7 +1232,7 @@
   });
 
   // ---------- OCR + result ----------
-  async function finishCapture(fullShotDataUrl, cropCanvasEl){
+  async function finishCapture(fullShotDataUrl, cropCanvasEl, plateBox){
     // Celá fotka zůstává jako uložená fotodokumentace přestupku (ta chce
     // širší kontext — auto, místo). Náhled na obrazovce i OCR ale používají
     // stejný ořez podle žlutého rámečku z kamery: bez okolního šumu
@@ -1245,7 +1271,7 @@
     // wait twice for two separate network round-trips.
     const locationPromise = getLocationAndAddress();
     // Zdarma lokální odhad barvy — běží souběžně, žádné volání ven.
-    const colorDetectPromise = detectDominantVehicleColor(fullShotDataUrl);
+    const colorDetectPromise = detectDominantVehicleColor(fullShotDataUrl, plateBox);
     // Google Vision Logo Detection — jen když je nastavený klíč, jinak se
     // rovnou přeskočí (žádné volání, žádné zpoždění).
     const visionKey = getVisionApiToken();
@@ -1528,9 +1554,9 @@
   }
 
   function classifyColorBucket(h, s, l){
-    if(l > 0.90) return 'Bílá';
+    if(l > 0.82) return 'Bílá';
     if(l < 0.13) return 'Černá';
-    if(s < 0.14) return l > 0.55 ? 'Stříbrná' : 'Šedá';
+    if(s < 0.14) return l > 0.45 ? 'Stříbrná' : 'Šedá';
     if(h < 14 || h >= 346) return 'Červená';
     if(h < 40){
       if(l < 0.32) return 'Hnědá';
@@ -1544,7 +1570,7 @@
     return 'Červená';
   }
 
-  function detectDominantVehicleColor(dataUrl){
+  function detectDominantVehicleColor(dataUrl, plateBox){
     return new Promise((resolve)=>{
       const img = new Image();
       img.onload = ()=>{
@@ -1556,10 +1582,34 @@
           ctx.drawImage(img, 0, 0, w, h);
           const data = ctx.getImageData(0, 0, w, h).data;
           const counts = {};
-          // Vzorkuje jen střed fotky — auto podle rámečku v kameře vyplňuje
-          // většinu záběru, okraje (podlaha/strop/nebe) se raději vynechají.
-          const x0 = Math.round(w * 0.12), x1 = Math.round(w * 0.88);
-          const y0 = Math.round(h * 0.20), y1 = Math.round(h * 0.85);
+
+          let x0, x1, y0, y1;
+          if(plateBox && plateBox.fullW && plateBox.fullH){
+            // Appka zná přesnou polohu žlutého rámečku z obrazovky kamery
+            // (stejná oblast, kterou appka ořízne pro OCR) — v něm bývá
+            // skoro jen karoserie a minimum pozadí, takže stačí vzorkovat
+            // přímo tuhle oblast, s malou rezervou po okrajích (kola,
+            // stíny). Mnohem spolehlivější než hádat/dopočítávat vlastní
+            // oblast kolem značky.
+            const pad = 0.08; // malá rezerva dovnitř od okrajů rámečku
+            const x0f = plateBox.x / plateBox.fullW;
+            const y0f = plateBox.y / plateBox.fullH;
+            const x1f = (plateBox.x + plateBox.w) / plateBox.fullW;
+            const y1f = (plateBox.y + plateBox.h) / plateBox.fullH;
+            const padW = (x1f - x0f) * pad, padH = (y1f - y0f) * pad;
+            x0 = Math.round(w * Math.max(0, x0f + padW));
+            x1 = Math.round(w * Math.min(1, x1f - padW));
+            y0 = Math.round(h * Math.max(0, y0f + padH));
+            y1 = Math.round(h * Math.min(1, y1f - padH));
+          } else {
+            // Záložní chování bez známé polohy značky (např. fotka vybraná
+            // ze souborů) — vzorkuje jen střed fotky.
+            x0 = Math.round(w * 0.12); x1 = Math.round(w * 0.88);
+            y0 = Math.round(h * 0.20); y1 = Math.round(h * 0.85);
+          }
+          if(x1 - x0 < 4){ x0 = Math.round(w*0.12); x1 = Math.round(w*0.88); }
+          if(y1 - y0 < 4){ y0 = Math.round(h*0.20); y1 = Math.round(h*0.85); }
+
           for(let y = y0; y < y1; y++){
             for(let x = x0; x < x1; x++){
               const i = (y * w + x) * 4;
