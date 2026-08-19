@@ -483,6 +483,75 @@
       <div class="confidence" id="confidenceRow" style="display:none;"></div>
 
       <div class="field-row">
+        <div class="field field-center">
+          <label>Tovární značka</label>
+          <select id="brandSelect" class="officer-select">
+            <option value="">Vyber značku</option>
+            <option>Škoda</option>
+            <option>Volkswagen</option>
+            <option>Audi</option>
+            <option>BMW</option>
+            <option>Mercedes-Benz</option>
+            <option>Opel</option>
+            <option>Ford</option>
+            <option>Peugeot</option>
+            <option>Citroën</option>
+            <option>Renault</option>
+            <option>Dacia</option>
+            <option>Fiat</option>
+            <option>Seat</option>
+            <option>Cupra</option>
+            <option>Volvo</option>
+            <option>Hyundai</option>
+            <option>Kia</option>
+            <option>Toyota</option>
+            <option>Honda</option>
+            <option>Nissan</option>
+            <option>Mazda</option>
+            <option>Suzuki</option>
+            <option>Mitsubishi</option>
+            <option>Subaru</option>
+            <option>Land Rover</option>
+            <option>Jaguar</option>
+            <option>Mini</option>
+            <option>Porsche</option>
+            <option>Lexus</option>
+            <option>Alfa Romeo</option>
+            <option>Lancia</option>
+            <option>Chevrolet</option>
+            <option>Jeep</option>
+            <option>Chrysler</option>
+            <option>Smart</option>
+            <option>DS</option>
+            <option>MG</option>
+            <option>SsangYong</option>
+            <option>Tesla</option>
+            <option>Jiná</option>
+          </select>
+        </div>
+        <div class="field field-center">
+          <label>Barva</label>
+          <select id="colorSelect" class="officer-select">
+            <option value="">Vyber barvu</option>
+            <option>Bílá</option>
+            <option>Černá</option>
+            <option>Šedá</option>
+            <option>Stříbrná</option>
+            <option>Modrá</option>
+            <option>Červená</option>
+            <option>Zelená</option>
+            <option>Žlutá</option>
+            <option>Hnědá</option>
+            <option>Oranžová</option>
+            <option>Fialová</option>
+            <option>Béžová</option>
+            <option>Zlatá</option>
+            <option>Bronzová</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="field-row">
         <div class="field offense-field" id="offenseTrigger">
           <div class="offense-value empty" id="offenseDisplay">Vyber přestupek</div>
           <span class="offense-ref" id="offenseRefDisplay" style="display:none;"></span>
@@ -505,9 +574,6 @@
           <label>Místo přestupku</label>
           <input type="text" id="addressInput" placeholder="Zjišťuji polohu…" readonly style="cursor:pointer;">
         </div>
-      </div>
-
-      <div class="field-row">
         <div class="field field-center">
           <label>Strážník</label>
           <select id="officerSelect" class="officer-select">
@@ -781,7 +847,9 @@
         officerName: lastGeneratedPdf.officerName || null,
         noticeNumber,
         lat: lastGeneratedPdf.lat != null ? lastGeneratedPdf.lat : null,
-        lng: lastGeneratedPdf.lng != null ? lastGeneratedPdf.lng : null
+        lng: lastGeneratedPdf.lng != null ? lastGeneratedPdf.lng : null,
+        brand: lastGeneratedPdf.brand || null,
+        color: lastGeneratedPdf.color || null
       };
       let extrasBlocked = false;
       try{
@@ -1127,6 +1195,8 @@
     let recognizedText = '';
     let confidence = 0;
     let ocrErrorMessage = null;
+    let recognizedBrand = null;
+    let recognizedColor = null;
     const token = getApiToken();
 
     const platePromise = (async ()=>{
@@ -1138,6 +1208,8 @@
         const result = await recognizeViaPlateRecognizer(cropDataUrl, token);
         recognizedText = cleanPlate(result.text);
         confidence = result.confidence;
+        recognizedBrand = result.brand || null;
+        recognizedColor = result.color || null;
       }catch(err){
         ocrErrorMessage = (err && err.message) ? err.message : String(err);
         console.error('Plate Recognizer failed:', err);
@@ -1160,6 +1232,7 @@
     }
 
     populateResult(recognizedText, confidence, ocrErrorMessage, location);
+    applyRecognizedBrandColor(recognizedBrand, recognizedColor);
     show('result');
   }
 
@@ -1302,12 +1375,17 @@
 
   // Sends the photo to Plate Recognizer's ALPR API (specialized model trained
   // on real-world license plates — far more accurate than generic OCR for
-  // this specific job) and returns its best guess.
+  // this specific job) and returns its best guess. Also opportunistically
+  // requests Vehicle Make/Model/Color (mmc=true) — a paid Plate Recognizer
+  // add-on. If the account doesn't have that add-on subscribed, the extra
+  // fields simply come back empty and nothing breaks; if it does, brand/
+  // color get pre-filled automatically.
   async function recognizeViaPlateRecognizer(dataUrl, token){
     const blob = await (await fetch(dataUrl)).blob();
     const formData = new FormData();
     formData.append('upload', blob, 'plate.jpg');
     formData.append('regions', 'cz');
+    formData.append('mmc', 'true');
 
     const res = await fetch('https://api.platerecognizer.com/v1/plate-reader/', {
       method: 'POST',
@@ -1323,9 +1401,47 @@
     const json = await res.json();
     if(json.results && json.results.length){
       const best = json.results.slice().sort((a,b)=> (b.score||0) - (a.score||0))[0];
-      return { text: (best.plate||'').toUpperCase(), confidence: Math.round((best.score||0) * 100) };
+      const out = { text: (best.plate||'').toUpperCase(), confidence: Math.round((best.score||0) * 100) };
+      // MMC doplněk (jen pokud je na účtu aktivovaný) — nejlepší uhodnutá
+      // značka a barva, jen když appka daný výraz zná ze seznamu v selectu.
+      if(best.model_make && best.model_make.length){
+        const topMake = best.model_make.slice().sort((a,b)=>(b.score||0)-(a.score||0))[0];
+        if(topMake && topMake.make) out.brand = topMake.make;
+      }
+      if(best.color && best.color.length){
+        const topColor = best.color.slice().sort((a,b)=>(b.score||0)-(a.score||0))[0];
+        if(topColor && topColor.color) out.color = topColor.color;
+      }
+      return out;
     }
     return { text: '', confidence: 0 };
+  }
+
+  // Anglické názvy barev, jak je vrací Plate Recognizer MMC, namapované na
+  // možnosti v selectu (česky). Značky appka porovnává case-insensitive
+  // přímo s <option> texty, protože Plate Recognizer už vrací "BMW",
+  // "Škoda" apod. v běžném tvaru.
+  const MMC_COLOR_MAP = {
+    'white':'Bílá', 'black':'Černá', 'gray':'Šedá', 'grey':'Šedá',
+    'silver':'Stříbrná', 'blue':'Modrá', 'red':'Červená', 'green':'Zelená',
+    'yellow':'Žlutá', 'brown':'Hnědá', 'orange':'Oranžová', 'violet':'Fialová',
+    'purple':'Fialová', 'beige':'Béžová', 'gold':'Zlatá', 'bronze':'Bronzová'
+  };
+
+  function applyRecognizedBrandColor(brand, color){
+    const brandSelect = document.getElementById('brandSelect');
+    const colorSelect = document.getElementById('colorSelect');
+    if(brand){
+      const match = [...brandSelect.options].find(o => o.value && o.value.toLowerCase() === String(brand).toLowerCase());
+      if(match) brandSelect.value = match.value;
+    }
+    if(color){
+      const czColor = MMC_COLOR_MAP[String(color).toLowerCase()];
+      if(czColor){
+        const match = [...colorSelect.options].find(o => o.value === czColor);
+        if(match) colorSelect.value = match.value;
+      }
+    }
   }
 
   function cleanPlate(raw){
@@ -1357,6 +1473,11 @@
     const officerSelect = document.getElementById('officerSelect');
     officerSelect.value = savedOfficer && [...officerSelect.options].some(o => o.value === savedOfficer)
       ? savedOfficer : '';
+
+    // Značka/barva se resetují pro každý nový snímek — appka je případně
+    // znovu předvyplní podle MMC výsledku (viz applyRecognizedBrandColor).
+    document.getElementById('brandSelect').value = '';
+    document.getElementById('colorSelect').value = '';
 
     selectedOffense = null;
     updateOffenseDisplay();
@@ -1605,6 +1726,8 @@
     const time = document.getElementById('timeInput').value;
     const address = document.getElementById('addressInput').value.trim();
     const officerName = document.getElementById('officerSelect').value.trim();
+    const brand = document.getElementById('brandSelect').value.trim();
+    const color = document.getElementById('colorSelect').value.trim();
 
     if(!officerName || !selectedOffense){
       const missing = [];
@@ -1639,6 +1762,7 @@
       // about to be shown for review, without recomputing anything.
       lastGeneratedPdf = {
         plate, date, time, address, offenseLabel, offenseCitation, officerName,
+        brand: brand || null, color: color || null,
         lat: lastResolvedGps ? lastResolvedGps.lat : null,
         lng: lastResolvedGps ? lastResolvedGps.lng : null,
         photos: allPhotoDataUrls.map(u => u.split(',')[1])
