@@ -429,6 +429,7 @@
     </div>
     <div class="tap-label">SKENUJ</div>
     <button class="fallback-link" id="apiKeyLink">⚙ Nastavit API klíč (Plate Recognizer)</button>
+    <button class="fallback-link" id="visionApiKeyLink">⚙ Nastavit Vision API klíč (značka)</button>
     <a class="fallback-link" id="historyLink" href="https://kokrsnek.github.io/RZ---scanner/prehled.html" target="_blank" rel="noopener" style="display:inline-block;">Odeslané přestupky</a>
     <div id="camError"></div>
   </div>
@@ -969,6 +970,29 @@
     }
   });
 
+  // ---------- Google Vision API key — Logo Detection pro tovární značku ----------
+  // Stejný princip jako u Plate Recognizeru: klíč se ukládá jen do
+  // localStorage tohoto telefonu, nikdy natvrdo do kódu / GitHub repa (ten
+  // je veřejný). Bez klíče appka jen vynechá tenhle krok a značku necháš
+  // vyplnit ručně — nic se nerozbije.
+  const VISION_TOKEN_STORAGE_KEY = 'googleVisionApiKey';
+  function getVisionApiToken(){
+    return (localStorage.getItem(VISION_TOKEN_STORAGE_KEY) || '').trim();
+  }
+  function updateVisionApiKeyLinkVisibility(){
+    document.getElementById('visionApiKeyLink').style.display = getVisionApiToken() ? 'none' : 'block';
+  }
+  updateVisionApiKeyLinkVisibility();
+
+  document.getElementById('visionApiKeyLink').addEventListener('click', ()=>{
+    const current = getVisionApiToken();
+    const val = window.prompt('Vložte Google Cloud Vision API klíč (Credentials → API keys). Uloží se jen ve vašem telefonu, nikdy na GitHub:', current);
+    if(val !== null){
+      localStorage.setItem(VISION_TOKEN_STORAGE_KEY, val.trim());
+      updateVisionApiKeyLinkVisibility();
+    }
+  });
+
   // ---------- Camera lifecycle ----------
   let nextCameraOpenIsRetry = false;
 
@@ -1222,8 +1246,16 @@
     const locationPromise = getLocationAndAddress();
     // Zdarma lokální odhad barvy — běží souběžně, žádné volání ven.
     const colorDetectPromise = detectDominantVehicleColor(fullShotDataUrl);
+    // Google Vision Logo Detection — jen když je nastavený klíč, jinak se
+    // rovnou přeskočí (žádné volání, žádné zpoždění).
+    const visionKey = getVisionApiToken();
+    const brandDetectPromise = visionKey
+      ? detectVehicleBrandViaGoogleVision(fullShotDataUrl, visionKey)
+      : Promise.resolve(null);
 
-    const [, location, locallyDetectedColor] = await Promise.all([platePromise, locationPromise, colorDetectPromise]);
+    const [, location, locallyDetectedColor, locallyDetectedBrand] = await Promise.all([
+      platePromise, locationPromise, colorDetectPromise, brandDetectPromise
+    ]);
 
     // If nothing was recognized and there's no technical error to explain
     // why (bad photo, unclear plate, etc.), don't bother showing an error
@@ -1237,6 +1269,7 @@
     populateResult(recognizedText, confidence, ocrErrorMessage, location);
     applyRecognizedBrandColor(recognizedBrand, recognizedColor);
     applyDetectedColor(locallyDetectedColor);
+    if(!recognizedBrand) applyDetectedBrand(locallyDetectedBrand);
     show('result');
   }
 
@@ -1456,6 +1489,19 @@
     if(match) colorSelect.value = match.value;
   }
 
+  function applyDetectedBrand(brandText){
+    if(!brandText) return;
+    const brandSelect = document.getElementById('brandSelect');
+    if(brandSelect.value) return; // placený MMC už značku vyplnil — nepřepisovat
+    const needle = String(brandText).toLowerCase();
+    // Přesná shoda, nebo aspoň že název značky je obsažený v textu, co
+    // Vision vrátil (např. "Škoda Auto" → "Škoda").
+    const match = [...brandSelect.options].find(o => o.value && (
+      o.value.toLowerCase() === needle || needle.includes(o.value.toLowerCase())
+    ));
+    if(match) brandSelect.value = match.value;
+  }
+
   // ---------- Zdarma lokální odhad barvy vozidla z fotky ----------
   // Bez placeného MMC doplňku appka spočítá převažující barvu karoserie
   // přímo v telefonu (canvas, žádné volání ven, žádné náklady). Nejde o
@@ -1534,6 +1580,37 @@
       img.onerror = ()=> resolve(null);
       img.src = dataUrl;
     });
+  }
+
+  // ---------- Google Vision Logo Detection — tovární značka z fotky ----------
+  // Volitelný doplněk vedle zdarma detekce barvy: pokud je nastavený Vision
+  // API klíč, appka pošle zmenšenou fotku na Google Cloud Vision a zkusí
+  // najít logo výrobce (přední maska/znak). Bez nastaveného klíče se tohle
+  // celé přeskočí — appka nikdy nevolá Vision bez klíče.
+  async function detectVehicleBrandViaGoogleVision(dataUrl, apiKey){
+    try{
+      const resized = await preparePhotoForUpload(dataUrl, 1024, 0.8);
+      const base64 = resized.split(',')[1];
+      const res = await fetch('https://vision.googleapis.com/v1/images:annotate?key=' + encodeURIComponent(apiKey), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          requests: [{
+            image: { content: base64 },
+            features: [{ type: 'LOGO_DETECTION', maxResults: 5 }]
+          }]
+        })
+      });
+      if(!res.ok) return null;
+      const json = await res.json();
+      const annotations = json.responses && json.responses[0] && json.responses[0].logoAnnotations;
+      if(!annotations || !annotations.length) return null;
+      const best = annotations.slice().sort((a,b)=>(b.score||0)-(a.score||0))[0];
+      return best.description || null;
+    }catch(e){
+      console.error('Google Vision Logo Detection selhalo:', e);
+      return null;
+    }
   }
 
   function cleanPlate(raw){
