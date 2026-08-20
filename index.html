@@ -1678,21 +1678,20 @@
           let x0, x1, y0, y1;
           if(plateBox && plateBox.fullW && plateBox.fullH){
             // Appka zná přesnou polohu žlutého rámečku z obrazovky kamery
-            // (stejná oblast, kterou appka ořízne pro OCR) — v něm bývá
-            // skoro jen karoserie a minimum pozadí, takže stačí vzorkovat
-            // přímo tuhle oblast, s malou rezervou po okrajích (kola,
-            // stíny). Mnohem spolehlivější než hádat/dopočítávat vlastní
-            // oblast kolem značky.
-            const pad = 0.08; // malá rezerva dovnitř od okrajů rámečku
+            // (stejná oblast, kterou appka ořízne pro OCR). Celý rámeček
+            // vzorkovat nešlo — bývá v něm mřížka, chrom, stíny i samotná
+            // SPZ, což barvu spolehlivě kazilo. Místo toho appka vzorkuje
+            // jen malý pevný výřez v horní-střední části rámečku (kapota
+            // těsně nad mřížkou/nárazníkem) — tam bývá čistý lak bez
+            // rušivých prvků, viz zakreslený vzor v appce.
             const x0f = plateBox.x / plateBox.fullW;
             const y0f = plateBox.y / plateBox.fullH;
-            const x1f = (plateBox.x + plateBox.w) / plateBox.fullW;
-            const y1f = (plateBox.y + plateBox.h) / plateBox.fullH;
-            const padW = (x1f - x0f) * pad, padH = (y1f - y0f) * pad;
-            x0 = Math.round(w * Math.max(0, x0f + padW));
-            x1 = Math.round(w * Math.min(1, x1f - padW));
-            y0 = Math.round(h * Math.max(0, y0f + padH));
-            y1 = Math.round(h * Math.min(1, y1f - padH));
+            const boxWf = plateBox.w / plateBox.fullW;
+            const boxHf = plateBox.h / plateBox.fullH;
+            x0 = Math.round(w * (x0f + boxWf * 0.32));
+            x1 = Math.round(w * (x0f + boxWf * 0.68));
+            y0 = Math.round(h * (y0f + boxHf * 0.22));
+            y1 = Math.round(h * (y0f + boxHf * 0.46));
           } else {
             // Záložní chování bez známé polohy značky (např. fotka vybraná
             // ze souborů) — vzorkuje jen střed fotky.
