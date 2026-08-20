@@ -122,24 +122,46 @@
   #listBody{flex:1; overflow-y:auto; overflow-x:hidden; -webkit-overflow-scrolling:touch; padding:14px 18px calc(env(safe-area-inset-bottom,0px) + 80px);}
   .list-empty{text-align:center; color:var(--muted); font-size:13.5px; margin-top:60px; line-height:1.6;}
   .record-item{
-    background:var(--asphalt-2); border:1px solid var(--line); border-radius:14px;
-    padding:14px 16px; margin-bottom:12px; cursor:pointer;
+    position:relative; background:var(--asphalt-2); border:1px solid var(--line); border-radius:14px;
+    padding:14px 16px 12px 19px; margin-bottom:14px; cursor:pointer; overflow:hidden;
   }
+  .record-item::before{
+    content:''; position:absolute; left:0; top:0; bottom:0; width:4px; background:#5B8DEF;
+  }
+  .record-item.boticka::before{background:var(--amber);}
   .record-item:active{transform:scale(.98);}
-  .record-item.resolved{opacity:.5;}
-  .record-notice-number{font-family:'Roboto Mono',monospace; font-size:10.5px; color:var(--muted); letter-spacing:.04em; margin-bottom:4px;}
-  .record-plate-row{display:flex; align-items:center; gap:10px; flex-wrap:wrap;}
-  .record-plate{font-family:'Oswald',sans-serif; font-weight:600; font-size:19px; letter-spacing:.05em;}
-  .record-resolved-badge{font-size:11px; font-weight:700; color:var(--bad); text-transform:uppercase; letter-spacing:.05em;}
+  .record-item.resolved{opacity:.55;}
+  .record-item.resolved::before{background:var(--good);}
+  .record-top-row{display:flex; align-items:flex-start; justify-content:space-between; gap:10px;}
+  .record-notice-number{
+    font-family:'Roboto Mono',monospace; font-size:10px; color:var(--muted);
+    letter-spacing:.03em; white-space:nowrap; margin-top:4px; flex-shrink:0;
+  }
+  .record-plate-row{display:flex; align-items:center; gap:8px; flex-wrap:wrap;}
+  .record-plate{font-family:'Oswald',sans-serif; font-weight:600; font-size:20px; letter-spacing:.05em;}
+  .record-resolved-badge{
+    font-size:10px; font-weight:700; color:var(--good); text-transform:uppercase; letter-spacing:.05em;
+    border:1px solid var(--good); border-radius:20px; padding:3px 8px;
+  }
   .record-doctype-badge{
-    font-size:10.5px; font-weight:700; text-transform:uppercase; letter-spacing:.04em;
+    font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.04em;
     padding:3px 8px; border-radius:20px; color:#5B8DEF; border:1px solid #5B8DEF;
   }
   .record-doctype-badge.boticka{color:var(--amber); border-color:var(--amber);}
-  .record-meta{font-family:'Roboto Mono',monospace; font-size:11px; color:var(--muted); margin-top:4px; letter-spacing:.03em; overflow-wrap:anywhere;}
-  .record-offense{font-size:13px; color:var(--text); margin-top:8px; line-height:1.4; overflow-wrap:anywhere;}
-  .record-submitted{font-size:11px; color:var(--muted); margin-top:6px; overflow-wrap:anywhere;}
-  .record-officer{font-size:11px; color:var(--muted); margin-top:2px;}
+  .record-meta{
+    font-family:'Roboto Mono',monospace; font-size:11.5px; color:var(--muted);
+    margin-top:8px; letter-spacing:.02em; overflow-wrap:anywhere;
+  }
+  .record-offense{
+    font-size:13.5px; color:var(--text); margin-top:10px; padding-top:10px;
+    border-top:1px solid var(--line); line-height:1.4; overflow-wrap:anywhere;
+  }
+  .record-footer{
+    display:flex; justify-content:space-between; align-items:baseline; flex-wrap:wrap; gap:4px 12px;
+    margin-top:10px; padding-top:9px; border-top:1px solid var(--line);
+  }
+  .record-officer{font-size:11.5px; color:var(--text); font-weight:600;}
+  .record-submitted{font-size:10.5px; color:var(--muted); overflow-wrap:anywhere; text-align:right;}
 
   /* ---------- DETAIL ---------- */
   #detailScreen{background:#111;}
@@ -945,14 +967,10 @@
 
     filtered.forEach(r=>{
       const item = document.createElement('div');
-      item.className = 'record-item' + (r.resolved ? ' resolved' : '');
+      item.className = 'record-item' + (r.resolved ? ' resolved' : '') + (r.docType === 'boticka' ? ' boticka' : '');
 
-      if(r.noticeNumber){
-        const num = document.createElement('div');
-        num.className = 'record-notice-number';
-        num.textContent = r.noticeNumber;
-        item.appendChild(num);
-      }
+      const topRow = document.createElement('div');
+      topRow.className = 'record-top-row';
 
       const plateRow = document.createElement('div');
       plateRow.className = 'record-plate-row';
@@ -973,11 +991,19 @@
         badge.textContent = 'Dořešeno';
         plateRow.appendChild(badge);
       }
-      item.appendChild(plateRow);
+      topRow.appendChild(plateRow);
+
+      if(r.noticeNumber){
+        const num = document.createElement('div');
+        num.className = 'record-notice-number';
+        num.textContent = r.noticeNumber;
+        topRow.appendChild(num);
+      }
+      item.appendChild(topRow);
 
       const meta = document.createElement('div');
       meta.className = 'record-meta';
-      meta.textContent = (r.date || '') + ' · ' + (r.time || '') + ' · ' + (r.address || '');
+      meta.textContent = (r.time || '') + ' · ' + formatDateCz(r.date) + (r.address ? ' · ' + r.address : '');
       item.appendChild(meta);
 
       if(r.offenseLabel){
@@ -987,17 +1013,22 @@
         item.appendChild(off);
       }
 
-      const sub = document.createElement('div');
-      sub.className = 'record-submitted';
-      sub.textContent = 'Odesláno ' + formatCreatedAt(r.createdAt) + (r.submittedBy ? ' · ' + r.submittedBy : '');
-      item.appendChild(sub);
+      const footer = document.createElement('div');
+      footer.className = 'record-footer';
 
       if(r.officerName){
         const officer = document.createElement('div');
         officer.className = 'record-officer';
         officer.textContent = 'str. ' + r.officerName;
-        item.appendChild(officer);
+        footer.appendChild(officer);
       }
+
+      const sub = document.createElement('div');
+      sub.className = 'record-submitted';
+      sub.textContent = 'Odesláno ' + formatCreatedAt(r.createdAt) + (r.submittedBy ? ' · ' + r.submittedBy : '');
+      footer.appendChild(sub);
+
+      if(footer.children.length) item.appendChild(footer);
 
       item.addEventListener('click', ()=> openDetail(r));
       container.appendChild(item);
