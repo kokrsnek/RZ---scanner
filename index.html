@@ -432,7 +432,8 @@
   .az-index-letter.active{background:var(--amber); color:#241a00;}
   .az-list{
     flex:1; min-width:0; overflow-y:auto; -webkit-overflow-scrolling:touch; overscroll-behavior:contain;
-    padding:0 20px calc(env(safe-area-inset-bottom,0px) + 30px);
+    padding:0 4px 0 20px;
+    padding-bottom:calc(env(safe-area-inset-bottom,0px) + 30px);
   }
   .az-list-item{
     padding:15px 2px; border-bottom:1px solid var(--line); font-size:16px; color:var(--text); cursor:pointer;
@@ -691,8 +692,8 @@
       <h2>Tovární značka</h2>
     </div>
     <div class="az-picker">
-      <div class="az-index" id="brandAzIndex"></div>
       <div class="az-list" id="brandList"></div>
+      <div class="az-index" id="brandAzIndex"></div>
     </div>
   </div>
 
@@ -2488,6 +2489,30 @@
   // funguje beze změny — mění se jen způsob výběru na obrazovce.
   let brandActiveLetter = null;
 
+  // Stejný princip jako "Nejčastěji hledané" u přestupků — appka si
+  // pamatuje, jak často byla která značka skutečně vybraná, a nejčastější
+  // z nich nabídne jako první, ještě před abecedním seznamem.
+  const BRAND_USAGE_KEY = 'brandUsageCounts';
+  function loadBrandUsage(){
+    try{ return JSON.parse(localStorage.getItem(BRAND_USAGE_KEY) || '{}'); }
+    catch(e){ return {}; }
+  }
+  function recordBrandUsage(name){
+    if(!name) return;
+    const usage = loadBrandUsage();
+    usage[name] = (usage[name] || 0) + 1;
+    try{ localStorage.setItem(BRAND_USAGE_KEY, JSON.stringify(usage)); }catch(e){}
+  }
+  function getTopBrands(n){
+    const usage = loadBrandUsage();
+    return getBrandOptions()
+      .map(name => ({ name, count: usage[name] || 0 }))
+      .filter(s => s.count > 0)
+      .sort((a,b) => b.count - a.count)
+      .slice(0, n)
+      .map(s => s.name);
+  }
+
   function brandFirstLetter(name){
     // Odstraní diakritiku jen pro řazení do rejstříku (Č → C), zobrazený
     // název značky zůstává beze změny.
@@ -2521,6 +2546,7 @@
 
   function selectBrand(name){
     document.getElementById('brandSelect').value = name;
+    recordBrandUsage(name);
     updateBrandDisplay();
     show('result');
   }
@@ -2537,6 +2563,25 @@
       clearItem.textContent = 'Neuvedeno';
       clearItem.addEventListener('click', ()=> selectBrand(''));
       container.appendChild(clearItem);
+
+      const top = getTopBrands(5);
+      if(top.length){
+        const topH = document.createElement('div');
+        topH.className = 'offense-group-title';
+        topH.textContent = 'Nejčastěji vybírané';
+        container.appendChild(topH);
+        top.forEach(name=>{
+          const item = document.createElement('div');
+          item.className = 'az-list-item';
+          item.textContent = name;
+          item.addEventListener('click', ()=> selectBrand(name));
+          container.appendChild(item);
+        });
+        const allH = document.createElement('div');
+        allH.className = 'offense-group-title';
+        allH.textContent = 'Všechny značky';
+        container.appendChild(allH);
+      }
     }
 
     if(!list.length){
