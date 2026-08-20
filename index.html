@@ -797,7 +797,7 @@
     screens[name].classList.add('active');
   }
 
-  const video = document.getElementById('video');
+  let video = document.getElementById('video');
   const canvas = document.getElementById('canvas');
   const ctx = canvas.getContext('2d');
   const camError = document.getElementById('camError');
@@ -1086,6 +1086,23 @@
     }
   }
 
+  // Vytvoří úplně nový <video> element a nahradí jím ten stávající v DOM.
+  // Předchozí opravy (explicitní .play(), vynucený reflow, neodpojování
+  // streamu) samy o sobě nepomohly — druhé/další otevření kamery se na iOS
+  // Safari občas vykreslilo ve špatné velikosti i tak. Tohle je razantnější,
+  // ale spolehlivější obchvat: nový element nemá žádnou "vnitřní paměť"
+  // WebKitu vázanou na to, že už jednou zobrazoval video a byl schovaný.
+  function recreateVideoElement(){
+    const fresh = document.createElement('video');
+    fresh.id = 'video';
+    fresh.autoplay = true;
+    fresh.playsInline = true;
+    fresh.muted = true;
+    video.replaceWith(fresh);
+    video = fresh;
+    return video;
+  }
+
   async function openCamera(){
     camError.style.display = 'none';
     applyCameraRetryUI(nextCameraOpenIsRetry);
@@ -1095,14 +1112,9 @@
     // one each time — this is what makes the browser re-prompt for camera
     // permission on every single photo instead of asking just once.
     if(stream && stream.active && stream.getVideoTracks().some(t=>t.readyState==='live')){
+      recreateVideoElement();
       video.srcObject = stream;
-      // iOS Safari kvirk: po odpojení (srcObject = null) a novém připojení
-      // téhož běžícího streamu se video element občas vykreslí ve špatné
-      // (neaktuální) velikosti, dokud ho explicitní .play() nedonutí znovu
-      // si sednout na skutečné rozměry. Přečtení offsetHeight hned potom
-      // vynutí synchronní přepočet layoutu jako další pojistka.
       video.play().catch(()=>{});
-      void video.offsetHeight;
       show('camera');
       return;
     }
@@ -1112,6 +1124,7 @@
         video:{ facingMode:{ideal:'environment'}, width:{ideal:1920}, height:{ideal:1080} },
         audio:false
       });
+      recreateVideoElement();
       video.srcObject = stream;
       video.play().catch(()=>{});
       show('camera');
