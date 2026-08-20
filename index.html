@@ -227,6 +227,20 @@
   .plate-caption{font-size:11px; color:var(--muted); font-family:'Roboto Mono',monospace; letter-spacing:.06em; margin:0 2px 26px; text-transform:uppercase;}
 
   .field-row{display:flex; gap:12px; margin-bottom:22px;}
+  .checkbox-field{
+    flex:0 0 auto; width:92px; background:var(--asphalt-2); border:1px solid var(--line);
+    border-radius:12px; display:flex; flex-direction:column; align-items:center; justify-content:center;
+    gap:6px; padding:10px 4px; cursor:pointer;
+  }
+  .checkbox-field input[type="checkbox"]{
+    width:26px; height:26px; margin:0; accent-color:var(--amber); cursor:pointer;
+  }
+  .checkbox-field label{
+    display:block; font-size:10.5px; color:var(--muted); font-family:'Roboto Mono',monospace;
+    letter-spacing:.06em; text-transform:uppercase; text-align:center; cursor:pointer;
+  }
+  .checkbox-field:has(input:checked){border-color:var(--amber);}
+  .checkbox-field:has(input:checked) label{color:var(--text);}
   .field{flex:1; background:var(--asphalt-2); border:1px solid var(--line); border-radius:12px; padding:10px 14px;}
   .field label{display:block; font-size:10.5px; color:var(--muted); font-family:'Roboto Mono',monospace; letter-spacing:.08em; text-transform:uppercase; margin-bottom:4px;}
   .field input{
@@ -591,9 +605,13 @@
       </div>
 
       <div class="field-row">
-        <div class="field offense-field" id="offenseTrigger">
+        <div class="field offense-field" id="offenseTrigger" style="flex:1;">
           <div class="offense-value empty" id="offenseDisplay">Vyber přestupek</div>
           <span class="offense-ref" id="offenseRefDisplay" style="display:none;"></span>
+        </div>
+        <div class="checkbox-field" id="tpzovField">
+          <input type="checkbox" id="tpzovCheckbox">
+          <label for="tpzovCheckbox">TPZOV</label>
         </div>
       </div>
 
@@ -927,7 +945,8 @@
         lat: lastGeneratedPdf.lat != null ? lastGeneratedPdf.lat : null,
         lng: lastGeneratedPdf.lng != null ? lastGeneratedPdf.lng : null,
         brand: lastGeneratedPdf.brand || null,
-        color: lastGeneratedPdf.color || null
+        color: lastGeneratedPdf.color || null,
+        tpzov: !!lastGeneratedPdf.tpzov
       };
       let extrasBlocked = false;
       try{
@@ -1790,6 +1809,7 @@
     document.getElementById('brandSelect').value = '';
     updateBrandDisplay();
     document.getElementById('colorSelect').value = '';
+    document.getElementById('tpzovCheckbox').checked = false;
 
     selectedOffense = null;
     updateOffenseDisplay();
@@ -2043,6 +2063,7 @@
     const officerName = document.getElementById('officerSelect').value.trim();
     const brand = document.getElementById('brandSelect').value.trim();
     const color = document.getElementById('colorSelect').value.trim();
+    const tpzov = document.getElementById('tpzovCheckbox').checked;
 
     if(!officerName || !selectedOffense){
       const missing = [];
@@ -2077,7 +2098,7 @@
       // about to be shown for review, without recomputing anything.
       lastGeneratedPdf = {
         plate, date, time, address, offenseLabel, offenseCitation, officerName,
-        brand: brand || null, color: color || null,
+        brand: brand || null, color: color || null, tpzov,
         lat: lastResolvedGps ? lastResolvedGps.lat : null,
         lng: lastResolvedGps ? lastResolvedGps.lng : null,
         photos: allPhotoDataUrls.map(u => u.split(',')[1])
