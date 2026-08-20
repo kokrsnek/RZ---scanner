@@ -412,6 +412,7 @@
   }
 
   function buildNoticeHtml(record){
+    const isBoticka = record.docType === 'boticka';
     const addressBlock = record.address ? `
       <div class="notice-section">
         <div class="notice-heading">Místo přestupku</div>
@@ -429,10 +430,19 @@
       <div class="notice-officer">str. ${escapeHtml(record.officerName)}</div>` : '';
     const vehicleBlock = (record.brand || record.color) ? `
       <div class="notice-vehicle">${escapeHtml([record.brand, record.color].filter(Boolean).join(', '))}</div>` : '';
+    const instructionsHtml = isBoticka ? `
+          Oznamuji Vám, že na výše uvedeném vozidle byl <b>umístěn technický prostředek k zabránění odjezdu vozidla (TPZOV)</b> dle § 45a zákona č. 361/2000 Sb., o silničním provozu, a to z důvodu porušení pravidel uvedeného níže.
+          <span class="heading-caps">Poučení</span>
+          Technický prostředek bude odstraněn po zaplacení nákladů spojených s jeho použitím a odstraněním, a to na Městské policii Blansko, Sadová 2. Neoprávněné odstranění technického prostředku vlastní silou je přestupkem dle § 125c odst. 1 písm. k) zákona č. 361/2000 Sb.
+        ` : `
+          Dostavte se proto ve vlastním zájmu, <b>a to neprodleně</b> na Městskou policii Blansko, Sadová 2. Tuto výzvu vezměte s sebou.
+          <span class="heading-caps">Poučení</span>
+          Dle § 11/odst. 1 a 2, zák. 553/1991 Sb., o obecní policii je osoba povinna výzvě vyhovět. Nedostavíte-li se bez dostatečné omluvy, můžete být dle § 11/odst. 8 výše uvedeného zákona předveden(a) nebo může být přestupek oznámen příslušnému správnímu orgánu k projednání.
+        `;
     return `
       <div class="notice-card">
-        <div class="notice-title">Výzva</div>
-        <div class="notice-subtitle">pro nepřítomného pachatele přestupku</div>
+        <div class="notice-title">${isBoticka ? 'Oznámení' : 'Výzva'}</div>
+        <div class="notice-subtitle">${isBoticka ? 'o použití technického prostředku k zabránění odjezdu vozidla' : 'pro nepřítomného pachatele přestupku'}</div>
         ${numberBlock}
         <div class="notice-label">Registrační značka</div>
         <div class="notice-platebox">${escapeHtml(record.plate || '')}</div>
@@ -441,9 +451,7 @@
         ${addressBlock}
         ${offenseBlock}
         <div class="notice-instructions">
-          Dostavte se proto ve vlastním zájmu, <b>a to neprodleně</b> na Městskou policii Blansko, Sadová 2. Tuto výzvu vezměte s sebou.
-          <span class="heading-caps">Poučení</span>
-          Dle § 11/odst. 1 a 2, zák. 553/1991 Sb., o obecní policii je osoba povinna výzvě vyhovět. Nedostavíte-li se bez dostatečné omluvy, můžete být dle § 11/odst. 8 výše uvedeného zákona předveden(a) nebo může být přestupek oznámen příslušnému správnímu orgánu k projednání.
+          ${instructionsHtml}
         </div>
         <div class="notice-footer">
           ${officerBlock}
@@ -803,12 +811,13 @@
   function buildStarPrintRequest(record){
     const builder = new StarWebPrintBuilder();
     let req = '';
+    const isBoticka = record.docType === 'boticka';
 
     req += builder.createInitializationElement();
     req += builder.createAlignmentElement({ position: 'center' });
 
-    req += builder.createTextElement({ data: 'VÝZVA\n', width: 2, height: 2, emphasis: true });
-    req += builder.createTextElement({ data: 'pro nepřítomného pachatele přestupku\n' });
+    req += builder.createTextElement({ data: (isBoticka ? 'OZNÁMENÍ' : 'VÝZVA') + '\n', width: 2, height: 2, emphasis: true });
+    req += builder.createTextElement({ data: (isBoticka ? 'o použití technického prostředku k zabránění odjezdu vozidla' : 'pro nepřítomného pachatele přestupku') + '\n' });
     if(record.noticeNumber){
       req += builder.createTextElement({ data: 'Č. j.: ' + record.noticeNumber + '\n', emphasis: true });
     }
@@ -830,17 +839,32 @@
     if(record.offenseCitation) req += builder.createTextElement({ data: record.offenseCitation + '\n' });
     req += builder.createTextElement({ data: '\n' });
 
-    req += builder.createTextElement({
-      data: 'Dostavte se proto ve vlastním zájmu, a to neprodleně na Městskou policii ' +
-            'Blansko, Sadová 2. Tuto výzvu vezměte s sebou.\n\n'
-    });
-    req += builder.createTextElement({ data: 'POUČENÍ\n', emphasis: true });
-    req += builder.createTextElement({
-      data: 'Dle § 11/odst. 1 a 2, zák. 553/1991 Sb., o obecní policii je osoba povinna ' +
-            'výzvě vyhovět. Nedostavíte-li se bez dostatečné omluvy, můžete být dle ' +
-            '§ 11/odst. 8 výše uvedeného zákona předveden(a) nebo může být přestupek ' +
-            'oznámen příslušnému správnímu orgánu k projednání.\n\n'
-    });
+    if(isBoticka){
+      req += builder.createTextElement({
+        data: 'Oznamuji Vám, že na výše uvedeném vozidle byl umístěn technický prostředek ' +
+              'k zabránění odjezdu vozidla (TPZOV) dle § 45a zákona č. 361/2000 Sb., ' +
+              'o silničním provozu, a to z důvodu porušení pravidel uvedeného výše.\n\n'
+      });
+      req += builder.createTextElement({ data: 'POUČENÍ\n', emphasis: true });
+      req += builder.createTextElement({
+        data: 'Technický prostředek bude odstraněn po zaplacení nákladů spojených s jeho ' +
+              'použitím a odstraněním, a to na Městské policii Blansko, Sadová 2. ' +
+              'Neoprávněné odstranění technického prostředku vlastní silou je přestupkem ' +
+              'dle § 125c odst. 1 písm. k) zákona č. 361/2000 Sb.\n\n'
+      });
+    } else {
+      req += builder.createTextElement({
+        data: 'Dostavte se proto ve vlastním zájmu, a to neprodleně na Městskou policii ' +
+              'Blansko, Sadová 2. Tuto výzvu vezměte s sebou.\n\n'
+      });
+      req += builder.createTextElement({ data: 'POUČENÍ\n', emphasis: true });
+      req += builder.createTextElement({
+        data: 'Dle § 11/odst. 1 a 2, zák. 553/1991 Sb., o obecní policii je osoba povinna ' +
+              'výzvě vyhovět. Nedostavíte-li se bez dostatečné omluvy, můžete být dle ' +
+              '§ 11/odst. 8 výše uvedeného zákona předveden(a) nebo může být přestupek ' +
+              'oznámen příslušnému správnímu orgánu k projednání.\n\n'
+      });
+    }
 
     if(record.officerName){
       req += builder.createTextElement({ data: officerPrintLabel(record.officerName) + '\n', emphasis: true });

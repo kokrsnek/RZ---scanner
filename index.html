@@ -227,18 +227,6 @@
   .plate-caption{font-size:11px; color:var(--muted); font-family:'Roboto Mono',monospace; letter-spacing:.06em; margin:0 2px 26px; text-transform:uppercase;}
 
   .field-row{display:flex; gap:12px; margin-bottom:22px;}
-  .checkbox-field{
-    flex:0 0 auto; width:92px; background:var(--asphalt-2); border:1px solid var(--line);
-    border-radius:12px; display:flex; align-items:center; justify-content:center;
-    padding:10px 4px; cursor:pointer; transition:background .15s ease, border-color .15s ease;
-  }
-  .checkbox-field input[type="checkbox"]{display:none;}
-  .checkbox-field .tpzov-label{
-    font-size:13px; color:var(--muted); font-family:'Roboto Mono',monospace;
-    letter-spacing:.06em; text-transform:uppercase; text-align:center; cursor:pointer;
-  }
-  .checkbox-field.active{background:var(--amber); border-color:var(--amber);}
-  .checkbox-field.active .tpzov-label{color:#241a00; font-weight:700;}
   .field{flex:1; background:var(--asphalt-2); border:1px solid var(--line); border-radius:12px; padding:10px 14px;}
   .field label{display:block; font-size:10.5px; color:var(--muted); font-family:'Roboto Mono',monospace; letter-spacing:.08em; text-transform:uppercase; margin-bottom:4px;}
   .field input{
@@ -603,13 +591,9 @@
       </div>
 
       <div class="field-row">
-        <div class="field offense-field" id="offenseTrigger" style="flex:1;">
+        <div class="field offense-field" id="offenseTrigger">
           <div class="offense-value empty" id="offenseDisplay">Vyber přestupek</div>
           <span class="offense-ref" id="offenseRefDisplay" style="display:none;"></span>
-        </div>
-        <div class="checkbox-field" id="tpzovField">
-          <input type="checkbox" id="tpzovCheckbox">
-          <span class="tpzov-label">TPZOV</span>
         </div>
       </div>
 
@@ -669,6 +653,15 @@
 
       <div class="saved-note" id="savedNote">✓ Náhled zkontrolován</div>
       <div class="submit-note" id="submitNote"></div>
+    </div>
+    <div class="confirm-overlay" id="docTypeConfirmOverlay">
+      <div class="confirm-box">
+        <div class="confirm-text">Jaký dokument vytvořit?</div>
+        <div class="confirm-btns">
+          <button class="confirm-btn confirm-no" id="docTypeVyzvaBtn">Výzva</button>
+          <button class="confirm-btn confirm-yes" id="docTypeBotickaBtn">Botička</button>
+        </div>
+      </div>
     </div>
     <div class="confirm-overlay" id="printConfirmOverlay">
       <div class="confirm-box">
@@ -888,7 +881,8 @@
     return `MPB-${year}-${docId.slice(-6).toUpperCase()}`;
   }
 
-  async function uploadLastPdfToFirestore(){
+  async function uploadLastPdfToFirestore(docType){
+    docType = docType || 'vyzva';
     if(!lastGeneratedPdf){
       setSubmitNote('Nejdřív zobrazte náhled.', 'err');
       return;
@@ -944,7 +938,7 @@
         lng: lastGeneratedPdf.lng != null ? lastGeneratedPdf.lng : null,
         brand: lastGeneratedPdf.brand || null,
         color: lastGeneratedPdf.color || null,
-        tpzov: !!lastGeneratedPdf.tpzov
+        docType: docType || 'vyzva'
       };
       let extrasBlocked = false;
       try{
@@ -981,7 +975,7 @@
         // Místo automatického přeskočení zpět appka nabídne rovnou tisk
         // výzvy — číslo jednací i všechna pole už jsou v tuhle chvíli
         // hotová, takže je to nejpřirozenější okamžik se zeptat.
-        const submittedRecord = { ...lastGeneratedPdf, noticeNumber };
+        const submittedRecord = { ...lastGeneratedPdf, noticeNumber, docType };
         const wantsPrint = await askPrintAfterSubmit(`✓ Přestupek odeslán do přehledu<br>Č. j.: ${noticeNumber}`);
         if(wantsPrint){
           await printViaStarWebPRNT(submittedRecord);
@@ -997,7 +991,7 @@
     }
   }
 
-  document.getElementById('submitBtn').addEventListener('click', ()=>{
+  document.getElementById('submitBtn').addEventListener('click', async ()=>{
     if(!lastGeneratedPdf){
       setSubmitNote('Nejdřív zobrazte náhled.', 'err');
       return;
@@ -1008,7 +1002,8 @@
       show('login');
       return;
     }
-    uploadLastPdfToFirestore();
+    const docType = await askDocType();
+    uploadLastPdfToFirestore(docType);
   });
 
   document.getElementById('loginCancelBtn').addEventListener('click', ()=>{
@@ -1034,7 +1029,8 @@
       show('result');
       if(pendingSubmitAfterLogin){
         pendingSubmitAfterLogin = false;
-        uploadLastPdfToFirestore();
+        const docType = await askDocType();
+        uploadLastPdfToFirestore(docType);
       }
     }catch(e){
       errEl.textContent = 'Přihlášení se nezdařilo — zkontrolujte e-mail a heslo.';
@@ -1807,8 +1803,6 @@
     document.getElementById('brandSelect').value = '';
     updateBrandDisplay();
     document.getElementById('colorSelect').value = '';
-    document.getElementById('tpzovCheckbox').checked = false;
-    document.getElementById('tpzovField').classList.remove('active');
 
     selectedOffense = null;
     updateOffenseDisplay();
@@ -1859,6 +1853,7 @@
   }
 
   function buildNoticeHtml(record){
+    const isBoticka = record.docType === 'boticka';
     const addressBlock = record.address ? `
       <div class="notice-section">
         <div class="notice-heading">Místo přestupku</div>
@@ -1876,10 +1871,25 @@
       <div class="notice-officer">str. ${escapeHtml(record.officerName)}</div>` : '';
     const vehicleBlock = (record.brand || record.color) ? `
       <div class="notice-vehicle">${escapeHtml([record.brand, record.color].filter(Boolean).join(', '))}</div>` : '';
+
+    // "Botička" (TPZOV) — samostatný typ dokumentu s jiným nadpisem i textem
+    // než běžná Výzva. Text níže je zatím pracovní návrh (žádost byla
+    // výslovně o "nějaký random text") — než se reálně použije v terénu,
+    // doporučuju znění projít a upravit dle skutečné praxe/pokynů.
+    const instructionsHtml = isBoticka ? `
+          Oznamuji Vám, že na výše uvedeném vozidle byl <b>umístěn technický prostředek k zabránění odjezdu vozidla (TPZOV)</b> dle § 45a zákona č. 361/2000 Sb., o silničním provozu, a to z důvodu porušení pravidel uvedeného níže.
+          <span class="heading-caps">Poučení</span>
+          Technický prostředek bude odstraněn po zaplacení nákladů spojených s jeho použitím a odstraněním, a to na Městské policii Blansko, Sadová 2. Neoprávněné odstranění technického prostředku vlastní silou je přestupkem dle § 125c odst. 1 písm. k) zákona č. 361/2000 Sb.
+        ` : `
+          Dostavte se proto ve vlastním zájmu, <b>a to neprodleně</b> na Městskou policii Blansko, Sadová 2. Tuto výzvu vezměte s sebou.
+          <span class="heading-caps">Poučení</span>
+          Dle § 11/odst. 1 a 2, zák. 553/1991 Sb., o obecní policii je osoba povinna výzvě vyhovět. Nedostavíte-li se bez dostatečné omluvy, můžete být dle § 11/odst. 8 výše uvedeného zákona předveden(a) nebo může být přestupek oznámen příslušnému správnímu orgánu k projednání.
+        `;
+
     return `
       <div class="notice-card">
-        <div class="notice-title">Výzva</div>
-        <div class="notice-subtitle">pro nepřítomného pachatele přestupku</div>
+        <div class="notice-title">${isBoticka ? 'Oznámení' : 'Výzva'}</div>
+        <div class="notice-subtitle">${isBoticka ? 'o použití technického prostředku k zabránění odjezdu vozidla' : 'pro nepřítomného pachatele přestupku'}</div>
         ${numberBlock}
         <div class="notice-label">Registrační značka</div>
         <div class="notice-platebox">${escapeHtml(record.plate || '')}</div>
@@ -1888,9 +1898,7 @@
         ${addressBlock}
         ${offenseBlock}
         <div class="notice-instructions">
-          Dostavte se proto ve vlastním zájmu, <b>a to neprodleně</b> na Městskou policii Blansko, Sadová 2. Tuto výzvu vezměte s sebou.
-          <span class="heading-caps">Poučení</span>
-          Dle § 11/odst. 1 a 2, zák. 553/1991 Sb., o obecní policii je osoba povinna výzvě vyhovět. Nedostavíte-li se bez dostatečné omluvy, můžete být dle § 11/odst. 8 výše uvedeného zákona předveden(a) nebo může být přestupek oznámen příslušnému správnímu orgánu k projednání.
+          ${instructionsHtml}
         </div>
         <div class="notice-footer">
           ${officerBlock}
@@ -1916,19 +1924,23 @@
   // StarWebPrintBuilder.js má komentáře) a klidně mi pošli chybovou
   // hlášku, pokud se něco nebude sedět, doladíme to napřesno.
   function buildStarPrintRequest(record){
+    const isBoticka = record.docType === 'boticka';
     const builder = new StarWebPrintBuilder();
     let req = '';
 
     req += builder.createInitializationElement();
     req += builder.createAlignmentElement({ position: 'center' });
 
-    req += builder.createTextElement({ data: 'VÝZVA\n', width: 2, height: 2, emphasis: true });
-    req += builder.createTextElement({ data: 'pro nepřítomného pachatele přestupku\n' });
+    req += builder.createTextElement({ data: (isBoticka ? 'OZNÁMENÍ' : 'VÝZVA') + '\n', width: 2, height: 2, emphasis: true });
+    req += builder.createTextElement({ data: (isBoticka ? 'o použití technického prostředku k zabránění odjezdu vozidla' : 'pro nepřítomného pachatele přestupku') + '\n' });
     if(record.noticeNumber){
       req += builder.createTextElement({ data: 'Č. j.: ' + record.noticeNumber + '\n', emphasis: true });
     }
     req += builder.createTextElement({ data: '\nREGISTRAČNÍ ZNAČKA\n' });
     req += builder.createTextElement({ data: (record.plate || '') + '\n', width: 3, height: 3, emphasis: true });
+    if(record.brand || record.color){
+      req += builder.createTextElement({ data: [record.brand, record.color].filter(Boolean).join(', ') + '\n' });
+    }
     req += builder.createRuledLineElement({ thickness: 2, lineWidth: 384 });
     req += builder.createTextElement({
       data: 'Datum: ' + formatDateCz(record.date) + '   Čas: ' + (record.time || '—') + '\n\n'
@@ -1942,17 +1954,35 @@
     if(record.offenseCitation) req += builder.createTextElement({ data: record.offenseCitation + '\n' });
     req += builder.createTextElement({ data: '\n' });
 
-    req += builder.createTextElement({
-      data: 'Dostavte se proto ve vlastním zájmu, a to neprodleně na Městskou policii ' +
-            'Blansko, Sadová 2. Tuto výzvu vezměte s sebou.\n\n'
-    });
-    req += builder.createTextElement({ data: 'POUČENÍ\n', emphasis: true });
-    req += builder.createTextElement({
-      data: 'Dle § 11/odst. 1 a 2, zák. 553/1991 Sb., o obecní policii je osoba povinna ' +
-            'výzvě vyhovět. Nedostavíte-li se bez dostatečné omluvy, můžete být dle ' +
-            '§ 11/odst. 8 výše uvedeného zákona předveden(a) nebo může být přestupek ' +
-            'oznámen příslušnému správnímu orgánu k projednání.\n\n'
-    });
+    // "Botička" (TPZOV) — jiný text než běžná Výzva. Zatím pracovní návrh
+    // (žádost byla výslovně o "nějaký random text"), doporučuju znění
+    // před reálným použitím v terénu projít a případně upravit.
+    if(isBoticka){
+      req += builder.createTextElement({
+        data: 'Oznamuji Vám, že na výše uvedeném vozidle byl umístěn technický prostředek ' +
+              'k zabránění odjezdu vozidla (TPZOV) dle § 45a zákona č. 361/2000 Sb., ' +
+              'o silničním provozu, a to z důvodu porušení pravidel uvedeného výše.\n\n'
+      });
+      req += builder.createTextElement({ data: 'POUČENÍ\n', emphasis: true });
+      req += builder.createTextElement({
+        data: 'Technický prostředek bude odstraněn po zaplacení nákladů spojených s jeho ' +
+              'použitím a odstraněním, a to na Městské policii Blansko, Sadová 2. ' +
+              'Neoprávněné odstranění technického prostředku vlastní silou je přestupkem ' +
+              'dle § 125c odst. 1 písm. k) zákona č. 361/2000 Sb.\n\n'
+      });
+    } else {
+      req += builder.createTextElement({
+        data: 'Dostavte se proto ve vlastním zájmu, a to neprodleně na Městskou policii ' +
+              'Blansko, Sadová 2. Tuto výzvu vezměte s sebou.\n\n'
+      });
+      req += builder.createTextElement({ data: 'POUČENÍ\n', emphasis: true });
+      req += builder.createTextElement({
+        data: 'Dle § 11/odst. 1 a 2, zák. 553/1991 Sb., o obecní policii je osoba povinna ' +
+              'výzvě vyhovět. Nedostavíte-li se bez dostatečné omluvy, můžete být dle ' +
+              '§ 11/odst. 8 výše uvedeného zákona předveden(a) nebo může být přestupek ' +
+              'oznámen příslušnému správnímu orgánu k projednání.\n\n'
+      });
+    }
 
     if(record.officerName){
       req += builder.createTextElement({ data: 'str. ' + record.officerName + '\n', emphasis: true });
@@ -2006,6 +2036,25 @@
 
   // Zobrazí dialog s hláškou o úspěšném odeslání a dotazem "Vytisknout
   // výzvu?" — vrátí Promise<boolean> podle volby uživatele (Ano/Ne).
+  function askDocType(){
+    return new Promise((resolve)=>{
+      const overlay = document.getElementById('docTypeConfirmOverlay');
+      const vyzvaBtn = document.getElementById('docTypeVyzvaBtn');
+      const botickaBtn = document.getElementById('docTypeBotickaBtn');
+      function cleanup(result){
+        overlay.classList.remove('open');
+        vyzvaBtn.removeEventListener('click', onVyzva);
+        botickaBtn.removeEventListener('click', onBoticka);
+        resolve(result);
+      }
+      function onVyzva(){ cleanup('vyzva'); }
+      function onBoticka(){ cleanup('boticka'); }
+      vyzvaBtn.addEventListener('click', onVyzva);
+      botickaBtn.addEventListener('click', onBoticka);
+      overlay.classList.add('open');
+    });
+  }
+
   function askPrintAfterSubmit(successText){
     return new Promise((resolve)=>{
       const overlay = document.getElementById('printConfirmOverlay');
@@ -2062,7 +2111,6 @@
     const officerName = document.getElementById('officerSelect').value.trim();
     const brand = document.getElementById('brandSelect').value.trim();
     const color = document.getElementById('colorSelect').value.trim();
-    const tpzov = document.getElementById('tpzovCheckbox').checked;
 
     if(!officerName || !selectedOffense){
       const missing = [];
@@ -2097,7 +2145,7 @@
       // about to be shown for review, without recomputing anything.
       lastGeneratedPdf = {
         plate, date, time, address, offenseLabel, offenseCitation, officerName,
-        brand: brand || null, color: color || null, tpzov,
+        brand: brand || null, color: color || null,
         lat: lastResolvedGps ? lastResolvedGps.lat : null,
         lng: lastResolvedGps ? lastResolvedGps.lng : null,
         photos: allPhotoDataUrls.map(u => u.split(',')[1])
@@ -2500,15 +2548,6 @@
   }
 
   document.getElementById('offenseTrigger').addEventListener('click', openOffensePicker);
-
-  // TPZOV — celý box funguje jako přepínací tlačítko (žádné klasické
-  // zaškrtávací políčko vidět). Skrytý checkbox zůstává jako datový zdroj,
-  // ať zbytek appky (reset, čtení hodnoty při odeslání) funguje beze změny.
-  document.getElementById('tpzovField').addEventListener('click', ()=>{
-    const checkbox = document.getElementById('tpzovCheckbox');
-    checkbox.checked = !checkbox.checked;
-    document.getElementById('tpzovField').classList.toggle('active', checkbox.checked);
-  });
   document.getElementById('offenseBackBtn').addEventListener('click', ()=> show('result'));
   document.getElementById('offenseSearch').addEventListener('input', (e)=> renderOffenseList(e.target.value));
 
