@@ -323,6 +323,7 @@
   }
   .notice-title{font-family:'Oswald',sans-serif; font-weight:700; font-size:26px; letter-spacing:.03em; margin:0 0 4px; text-transform:uppercase;}
   .notice-subtitle{color:#777; font-size:12.5px; margin:0 0 18px;}
+  .notice-subtitle-boticka{font-size:18.75px; font-weight:700; color:#333;}
   .notice-number{color:#666; font-size:11px; letter-spacing:.03em; margin:-10px 0 18px; font-weight:800;}
   .notice-officer{font-weight:600; font-size:11px; color:#555; margin-bottom:4px;}
   .notice-label{color:#999; font-weight:700; font-size:11px; letter-spacing:.08em; text-transform:uppercase; margin-bottom:8px;}
@@ -658,8 +659,8 @@
       <div class="confirm-box">
         <div class="confirm-text">Jaký dokument vytvořit?</div>
         <div class="confirm-btns">
-          <button class="confirm-btn confirm-no" id="docTypeVyzvaBtn">Výzva</button>
-          <button class="confirm-btn confirm-yes" id="docTypeBotickaBtn">Botička</button>
+          <button class="confirm-btn confirm-yes" id="docTypeVyzvaBtn">Parkovačka</button>
+          <button class="confirm-btn confirm-no" id="docTypeBotickaBtn">Botička</button>
         </div>
       </div>
     </div>
@@ -1889,7 +1890,7 @@
     return `
       <div class="notice-card">
         <div class="notice-title">${isBoticka ? 'Oznámení' : 'Výzva'}</div>
-        <div class="notice-subtitle">${isBoticka ? 'o použití technického prostředku k zabránění odjezdu vozidla' : 'pro nepřítomného pachatele přestupku'}</div>
+        <div class="notice-subtitle${isBoticka ? ' notice-subtitle-boticka' : ''}">${isBoticka ? 'o použití technického prostředku k zabránění odjezdu vozidla' : 'pro nepřítomného pachatele přestupku'}</div>
         ${numberBlock}
         <div class="notice-label">Registrační značka</div>
         <div class="notice-platebox">${escapeHtml(record.plate || '')}</div>
