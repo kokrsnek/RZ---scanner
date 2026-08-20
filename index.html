@@ -1096,6 +1096,13 @@
     // permission on every single photo instead of asking just once.
     if(stream && stream.active && stream.getVideoTracks().some(t=>t.readyState==='live')){
       video.srcObject = stream;
+      // iOS Safari kvirk: po odpojení (srcObject = null) a novém připojení
+      // téhož běžícího streamu se video element občas vykreslí ve špatné
+      // (neaktuální) velikosti, dokud ho explicitní .play() nedonutí znovu
+      // si sednout na skutečné rozměry. Přečtení offsetHeight hned potom
+      // vynutí synchronní přepočet layoutu jako další pojistka.
+      video.play().catch(()=>{});
+      void video.offsetHeight;
       show('camera');
       return;
     }
@@ -1106,6 +1113,7 @@
         audio:false
       });
       video.srcObject = stream;
+      video.play().catch(()=>{});
       show('camera');
     }catch(err){
       // Live in-app camera blocked (common inside embedded webviews) — fall back
