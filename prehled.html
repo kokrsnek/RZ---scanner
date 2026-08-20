@@ -122,20 +122,16 @@
   #listBody{flex:1; overflow-y:auto; overflow-x:hidden; -webkit-overflow-scrolling:touch; padding:14px 18px calc(env(safe-area-inset-bottom,0px) + 80px);}
   .list-empty{text-align:center; color:var(--muted); font-size:13.5px; margin-top:60px; line-height:1.6;}
   .record-item{
-    position:relative; background:var(--asphalt-2); border:1px solid var(--line); border-radius:14px;
-    padding:14px 16px 12px 19px; margin-bottom:14px; cursor:pointer; overflow:hidden;
+    position:relative; background:rgba(91,141,239,.07); border:1.5px solid rgba(91,141,239,.55);
+    border-radius:14px; padding:14px 16px 12px; margin-bottom:14px; cursor:pointer; overflow:hidden;
   }
-  .record-item::before{
-    content:''; position:absolute; left:0; top:0; bottom:0; width:4px; background:#5B8DEF;
-  }
-  .record-item.boticka::before{background:var(--amber);}
+  .record-item.boticka{background:rgba(255,176,32,.07); border-color:rgba(255,176,32,.55);}
   .record-item:active{transform:scale(.98);}
-  .record-item.resolved{opacity:.55;}
-  .record-item.resolved::before{background:var(--good);}
-  .record-top-row{display:flex; align-items:flex-start; justify-content:space-between; gap:10px;}
+  .record-item.resolved{background:rgba(51,211,153,.07); border-color:rgba(51,211,153,.5); opacity:.75;}
+  .record-top-row{display:flex; flex-direction:column; gap:6px;}
   .record-notice-number{
     font-family:'Roboto Mono',monospace; font-size:10px; color:var(--muted);
-    letter-spacing:.03em; white-space:nowrap; margin-top:4px; flex-shrink:0;
+    letter-spacing:.03em; white-space:nowrap;
   }
   .record-plate-row{display:flex; align-items:center; gap:8px; flex-wrap:wrap;}
   .record-plate{font-family:'Oswald',sans-serif; font-weight:600; font-size:20px; letter-spacing:.05em;}
