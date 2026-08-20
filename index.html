@@ -229,18 +229,16 @@
   .field-row{display:flex; gap:12px; margin-bottom:22px;}
   .checkbox-field{
     flex:0 0 auto; width:92px; background:var(--asphalt-2); border:1px solid var(--line);
-    border-radius:12px; display:flex; flex-direction:column; align-items:center; justify-content:center;
-    gap:6px; padding:10px 4px; cursor:pointer;
+    border-radius:12px; display:flex; align-items:center; justify-content:center;
+    padding:10px 4px; cursor:pointer; transition:background .15s ease, border-color .15s ease;
   }
-  .checkbox-field input[type="checkbox"]{
-    width:26px; height:26px; margin:0; accent-color:var(--amber); cursor:pointer;
-  }
-  .checkbox-field label{
-    display:block; font-size:10.5px; color:var(--muted); font-family:'Roboto Mono',monospace;
+  .checkbox-field input[type="checkbox"]{display:none;}
+  .checkbox-field .tpzov-label{
+    font-size:13px; color:var(--muted); font-family:'Roboto Mono',monospace;
     letter-spacing:.06em; text-transform:uppercase; text-align:center; cursor:pointer;
   }
-  .checkbox-field:has(input:checked){border-color:var(--amber);}
-  .checkbox-field:has(input:checked) label{color:var(--text);}
+  .checkbox-field.active{background:var(--amber); border-color:var(--amber);}
+  .checkbox-field.active .tpzov-label{color:#241a00; font-weight:700;}
   .field{flex:1; background:var(--asphalt-2); border:1px solid var(--line); border-radius:12px; padding:10px 14px;}
   .field label{display:block; font-size:10.5px; color:var(--muted); font-family:'Roboto Mono',monospace; letter-spacing:.08em; text-transform:uppercase; margin-bottom:4px;}
   .field input{
@@ -611,7 +609,7 @@
         </div>
         <div class="checkbox-field" id="tpzovField">
           <input type="checkbox" id="tpzovCheckbox">
-          <label for="tpzovCheckbox">TPZOV</label>
+          <span class="tpzov-label">TPZOV</span>
         </div>
       </div>
 
@@ -1810,6 +1808,7 @@
     updateBrandDisplay();
     document.getElementById('colorSelect').value = '';
     document.getElementById('tpzovCheckbox').checked = false;
+    document.getElementById('tpzovField').classList.remove('active');
 
     selectedOffense = null;
     updateOffenseDisplay();
@@ -2501,6 +2500,15 @@
   }
 
   document.getElementById('offenseTrigger').addEventListener('click', openOffensePicker);
+
+  // TPZOV — celý box funguje jako přepínací tlačítko (žádné klasické
+  // zaškrtávací políčko vidět). Skrytý checkbox zůstává jako datový zdroj,
+  // ať zbytek appky (reset, čtení hodnoty při odeslání) funguje beze změny.
+  document.getElementById('tpzovField').addEventListener('click', ()=>{
+    const checkbox = document.getElementById('tpzovCheckbox');
+    checkbox.checked = !checkbox.checked;
+    document.getElementById('tpzovField').classList.toggle('active', checkbox.checked);
+  });
   document.getElementById('offenseBackBtn').addEventListener('click', ()=> show('result'));
   document.getElementById('offenseSearch').addEventListener('input', (e)=> renderOffenseList(e.target.value));
 
