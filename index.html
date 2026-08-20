@@ -1129,6 +1129,7 @@
       stream.getTracks().forEach(t=>t.stop());
       stream = null;
     }
+    video.srcObject = null;
   }
 
   document.getElementById('startBtn').addEventListener('click', openCamera);
@@ -1257,7 +1258,14 @@
     // "warm" in the background so the next photo (Přefotit / Nový přestupek)
     // can reuse it without triggering another permission prompt. The stream
     // is only fully released via the ✕ button on the camera screen.
-    video.srcObject = null;
+    //
+    // We also deliberately leave <video> attached to it (no srcObject =
+    // null) — the camera screen just gets hidden via the normal screen
+    // switch below. Detaching and reattaching the very same live stream is
+    // a known iOS Safari quirk that can leave the video element rendering
+    // at a stale/wrong size on the next "Přefotit" (an explicit .play()
+    // call afterwards didn't reliably fix it either) — simplest robust fix
+    // is to just never detach it in the first place.
     finishCapture(fullShot, cropCanvas, { x: cropX, y: cropY, w: cropW, h: cropH, fullW: vw, fullH: vh });
   });
 
