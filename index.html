@@ -2047,10 +2047,12 @@
     // doporučuju znění projít a upravit dle skutečné praxe/pokynů.
     const instructionsHtml = isBoticka ? `
           Oznamuji Vám, že na výše uvedeném vozidle byl <b>umístěn technický prostředek k zabránění odjezdu vozidla (TPZOV)</b> dle § 45a zákona č. 361/2000 Sb., o silničním provozu, a to z důvodu porušení pravidel uvedeného níže.
+          <b style="display:block; margin:10px 0 6px;">pořízena fotodokumentace</b>
           <span class="heading-caps">Poučení</span>
           Technický prostředek bude odstraněn po zaplacení nákladů spojených s jeho použitím a odstraněním, a to na Městské policii Blansko, Sadová 2. Neoprávněné odstranění technického prostředku vlastní silou je přestupkem dle § 125c odst. 1 písm. k) zákona č. 361/2000 Sb.
         ` : `
           Dostavte se proto ve vlastním zájmu, <b>a to neprodleně</b> na Městskou policii Blansko, Sadová 2. Tuto výzvu vezměte s sebou.
+          <b style="display:block; margin:10px 0 6px;">pořízena fotodokumentace</b>
           <span class="heading-caps">Poučení</span>
           Dle § 11/odst. 1 a 2, zák. 553/1991 Sb., o obecní policii je osoba povinna výzvě vyhovět. Nedostavíte-li se bez dostatečné omluvy, můžete být dle § 11/odst. 8 výše uvedeného zákona předveden(a) nebo může být přestupek oznámen příslušnému správnímu orgánu k projednání.
         `;
@@ -2210,6 +2212,7 @@
         ) + '\n\n',
         { align: 'center' }
       );
+      x += textEl('pořízena fotodokumentace\n\n', { align: 'center', em: true });
       x += textEl('POUČENÍ\n', { align: 'center', em: true });
       x += textEl(
         wrapWords(
@@ -2228,6 +2231,7 @@
         ) + '\n\n',
         { align: 'center' }
       );
+      x += textEl('pořízena fotodokumentace\n\n', { align: 'center', em: true });
       x += textEl('POUČENÍ\n', { align: 'center', em: true });
       x += textEl(
         wrapWords(
