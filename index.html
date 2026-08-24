@@ -2103,7 +2103,7 @@
         ) + '\n\n',
         { align: 'left' }
       );
-      x += textEl('POUČENÍ\n', { align: 'left', em: true });
+      x += textEl('POUČENÍ\n', { align: 'center', em: true });
       x += textEl(
         wrapWords(
           'Technický prostředek bude odstraněn po zaplacení nákladů spojených s jeho ' +
@@ -2111,7 +2111,7 @@
           'Neoprávněné odstranění technického prostředku vlastní silou je přestupkem ' +
           'dle § 125c odst. 1 písm. k) zákona č. 361/2000 Sb.'
         ) + '\n\n',
-        { align: 'left' }
+        { align: 'center' }
       );
     } else {
       x += textEl(
@@ -2121,7 +2121,7 @@
         ) + '\n\n',
         { align: 'left' }
       );
-      x += textEl('POUČENÍ\n', { align: 'left', em: true });
+      x += textEl('POUČENÍ\n', { align: 'center', em: true });
       x += textEl(
         wrapWords(
           'Dle § 11/odst. 1 a 2, zák. 553/1991 Sb., o obecní policii je osoba povinna ' +
@@ -2129,13 +2129,13 @@
           '§ 11/odst. 8 výše uvedeného zákona předveden(a) nebo může být přestupek ' +
           'oznámen příslušnému správnímu orgánu k projednání.'
         ) + '\n\n',
-        { align: 'left' }
+        { align: 'center' }
       );
     }
 
     if(record.officerName){
       const officerId = OFFICER_NUMBERS[record.officerName];
-      x += textEl('str. ' + (officerId || record.officerName) + '\n', { align: 'left', em: true });
+      x += textEl('str. ' + (officerId || record.officerName) + '\n', { align: 'center', em: true });
     }
     x += textEl('Městská policie Blansko\n', { align: 'left', em: true });
     x += textEl('Sadová 149/2, 678 01 Blansko\n', { align: 'left' });
