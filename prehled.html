@@ -624,6 +624,20 @@
     return arr;
   }
 
+  // Appka ukládá do Firestore jen spojenou citaci (např. "§ 27 odst. 1
+  // písm. a) — přestupek dle § 125c odst. 1 písm. k) (zákon č. 361/2000
+  // Sb.)"), ne samostatně základní paragraf a sankci. Pro "Popis skutku"
+  // je ale potřeba mít obě části zvlášť (základní paragraf hned za
+  // "ustanovení", sankce až u "dle" na konci) — tahle funkce citaci zpět
+  // rozparsuje. Funguje na starých i nových záznamech (formát citace se
+  // neměnil, jen její použití v textu skutku).
+  function parseOffenseCitation(citation){
+    if(!citation) return null;
+    const m = citation.match(/^(.+?)(?: — přestupek dle (.+?))? \(zákon č\. (.+?)\)$/);
+    if(!m) return null;
+    return { ref: m[1], sankce: m[2] || null, law: m[3] };
+  }
+
   async function buildOznameniDocx(record, photosB64){
     const offenseCitation = record.offenseCitation || '';
     const offenseLabel = record.offenseLabel || '';
@@ -662,11 +676,22 @@
     if(record.lat != null && record.lng != null){
       gpsPart = ' (GPS: ' + Number(record.lat).toFixed(6) + ', ' + Number(record.lng).toFixed(6) + ')';
     }
-    const skutek = 'Dne ' + formatDateCz(record.date) + ' v ' + (record.time || '—') + ' hodin se neustanovený ' +
+    // Základní ustanovení (např. § 27 odst. 1 písm. a)) hned za "ustanovení",
+    // sankční ustanovení (§ 125c...) až na konci u "dle" — viz komentář u
+    // parseOffenseCitation výše. Když se citaci z nějakého důvodu nepodaří
+    // rozparsovat (neobvyklý/ruční formát), appka se vrátí k původnímu
+    // chování a použije celou citaci na obou místech.
+    const parsedCitation = parseOffenseCitation(offenseCitation);
+    const baseCite = parsedCitation ? (parsedCitation.ref + ' (zákon č. ' + parsedCitation.law + ')') : offenseCitation;
+    const sankceCite = parsedCitation
+      ? (parsedCitation.sankce ? (parsedCitation.sankce + ' (zákon č. ' + parsedCitation.law + ')') : baseCite)
+      : offenseCitation;
+    const skutek = 'Dne ' + formatDateCz(record.date) + ' v ' + (record.time || '—') + ' hodin se dosud neustanovený ' +
       'řidič vozidla registrační značky ' + (record.plate || '') + '. Na ulici ' + (record.address || '') +
-      gpsPart + ' dopustil porušení ustanovení – ' + offenseLabel +
-      ', a tím je podezřelý ze spáchání přestupku dle ' + offenseCitation;
+      gpsPart + ' dopustil porušení ustanovení ' + baseCite + ' – ' + offenseLabel +
+      ', a tím je podezřelý ze spáchání přestupku dle ' + sankceCite;
     body += docxPara(skutek, { size: 20, spacingAfter: 200 });
+
 
     body += docxPara('Lustrací byl(a), jako provozovatel výše uvedeného vozidla, zjištěn(a) výše jmenovaný(á).', { size: 20, spacingAfter: 400 });
 
