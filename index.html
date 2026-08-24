@@ -13,15 +13,12 @@
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
 <!--
-  Star webPRNT SDK — potřebné pro tisk výzvy na tiskárnu Star SM-T300i (WSP-i350)
-  přes appku "Star webPRNT Browser". Soubory nejsou součástí tohoto repozitáře,
-  je potřeba je stáhnout z https://starmicronics.com/support/download/webprnt-sdk/
-  (nebo https://github.com/star-micronics/starwebprnt-sdk) a uložit do složky
-  /js/ vedle index.html. Appka bez nich funguje normálně dál — tlačítko "Tisk"
-  jen zůstane needěné a zobrazí nápovědu, viz printViaStarWebPRNT().
+  Tisk na Epson TM-P20II přes ePOS-Print XML (dřív tu byl Star webPRNT SDK,
+  přešli jsme na Epson — viz funkce printViaEpson() a buildEposPrintXml()
+  níže). ePOS-Print XML je jen HTTP POST s malým XML dokumentem na tiskárnu,
+  takže appka žádný externí SDK soubor nepotřebuje — zůstává jeden HTML
+  soubor beze změny.
 -->
-<script src="js/StarWebPrintBuilder.js" onerror="console.warn('Star webPRNT SDK nenalezen — tlačítko Tisk nebude funkční, viz komentář v <head>.')"></script>
-<script src="js/StarWebPrintTrader.js" onerror="console.warn('Star webPRNT SDK nenalezen — tlačítko Tisk nebude funkční, viz komentář v <head>.')"></script>
 <style>
   :root{
     --asphalt:#0A0C10;
@@ -460,6 +457,8 @@
     <div class="tap-label">SKENUJ</div>
     <button class="fallback-link" id="apiKeyLink">⚙ Nastavit API klíč (Plate Recognizer)</button>
     <button class="fallback-link" id="visionApiKeyLink">⚙ Nastavit Vision API klíč (značka)</button>
+    <button class="fallback-link" id="printerHostLink">⚙ Nastavit tiskárnu (Epson TM-P20II)</button>
+    <button class="fallback-link" id="printerTestLink">🖨 Otestovat tiskárnu</button>
     <a class="fallback-link" id="historyLink" href="https://kokrsnek.github.io/RZ---scanner/prehled.html" target="_blank" rel="noopener" style="display:inline-block;">Odeslané přestupky</a>
     <div id="camError"></div>
   </div>
@@ -759,7 +758,7 @@
   // Po smazání a novém přidání appky na plochu iOS vytvoří nový, prázdný
   // úložný kontejner (localStorage se vynuluje) — appka se pak znovu zeptá
   // na klíče. Aby se nemusely přepisovat na telefonní klávesnici, appka
-  // umí klíče převzít rovnou z URL (?prToken=...&visionKey=...), uložit je
+  // umí klíče převzít rovnou z URL (?prToken=...&visionKey=...&printerHost=...), uložit je
   // do localStorage a hned je z adresy smazat, ať nezůstanou viditelné
   // v historii prohlížeče. Takový odkaz (s klíči) je nutné držet stejně
   // soukromě jako klíče samotné — uložit si ho třeba do Poznámek, nikdy
@@ -773,6 +772,10 @@
     }
     if(params.has('visionKey')){
       localStorage.setItem('googleVisionApiKey', params.get('visionKey').trim());
+      changed = true;
+    }
+    if(params.has('printerHost')){
+      localStorage.setItem('eposPrinterHost', params.get('printerHost').trim());
       changed = true;
     }
     if(changed){
@@ -979,7 +982,7 @@
         const submittedRecord = { ...lastGeneratedPdf, noticeNumber, docType };
         const wantsPrint = await askPrintAfterSubmit(`✓ Přestupek odeslán do přehledu<br>Č. j.: ${noticeNumber}`);
         if(wantsPrint){
-          await printViaStarWebPRNT(submittedRecord);
+          await printViaEpson(submittedRecord);
           setTimeout(()=>{ show('start'); }, 1200);
         } else {
           show('start');
@@ -1080,6 +1083,61 @@
     if(val !== null){
       localStorage.setItem(VISION_TOKEN_STORAGE_KEY, val.trim());
       updateVisionApiKeyLinkVisibility();
+    }
+  });
+
+  // ---------- Adresa tiskárny Epson TM-P20II (ePOS-Print XML přes Wi-Fi) ----------
+  // Ukládá se jen IP/hostname tiskárny, ne celá URL — tu si appka doplní sama
+  // (viz epsonPrinterEndpoint níže). Appka běží na https://kokrsnek.github.io,
+  // takže prohlížeč zablokuje volání na obyčejné http:// (tzv. mixed content).
+  // Proto appka vždy sestaví https:// adresu, ledaže zadáš adresu už s http://
+  // nebo https:// na začátku — pak ji použije přesně tak, jak je napsaná.
+  // Tiskárna musí mít v TMNet WebConfig zapnuté HTTPS (SSL/TLS) na stejném
+  // portu/cestě a ty musíš v Safari jednou navštívit https://<IP tiskárny>/
+  // a potvrdit "Navštívit web" u certifikátu — až pak appka smí přes fetch()
+  // na tuto adresu volat i z jiné stránky (viz tlačítko "Otestovat tiskárnu").
+  const PRINTER_HOST_STORAGE_KEY = 'eposPrinterHost';
+  function getPrinterHost(){
+    return (localStorage.getItem(PRINTER_HOST_STORAGE_KEY) || '').trim();
+  }
+  function updatePrinterHostLinkLabel(){
+    const host = getPrinterHost();
+    document.getElementById('printerHostLink').textContent = host
+      ? '⚙ Tiskárna: ' + host
+      : '⚙ Nastavit tiskárnu (Epson TM-P20II)';
+  }
+  updatePrinterHostLinkLabel();
+
+  document.getElementById('printerHostLink').addEventListener('click', ()=>{
+    const current = getPrinterHost();
+    const val = window.prompt(
+      'Zadej IP adresu tiskárny TM-P20II (např. 192.168.192.168 ve Wi-Fi Direct ' +
+      'režimu, nebo IP přidělenou vaší sítí/hotspotem). Appka se na ni vždy ' +
+      'připojí přes HTTPS — pokud tiskárna HTTPS ještě nemá zapnuté, napiš ' +
+      'adresu s "http://" na začátku:',
+      current
+    );
+    if(val !== null){
+      localStorage.setItem(PRINTER_HOST_STORAGE_KEY, val.trim());
+      updatePrinterHostLinkLabel();
+    }
+  });
+
+  document.getElementById('printerTestLink').addEventListener('click', async ()=>{
+    const link = document.getElementById('printerTestLink');
+    const host = getPrinterHost();
+    if(!host){
+      alert('Nejdřív nastav IP adresu tiskárny (tlačítko výše).');
+      return;
+    }
+    link.disabled = true;
+    link.textContent = '🖨 Testuju…';
+    const ok = await printViaEpson({ testOnly: true });
+    link.disabled = false;
+    updatePrinterHostLinkLabel();
+    if(!ok){
+      // printViaEpson už zobrazuje konkrétní chybu přes alert níže,
+      // tady jen obnovíme popisek tlačítka.
     }
   });
 
@@ -1911,125 +1969,198 @@
       </div>`;
   }
 
-  // ---------- Tisk na Bluetooth tiskárnu (Star SM-T300i / WSP-i350) ----------
-  // Appka musí být otevřená v appce "Star webPRNT Browser" (ne v běžném
-  // Safari) — iOS Safari neumí mluvit po Bluetooth a Star to řeší vlastním
-  // prohlížečem, který teprve poskytuje StarWebPrintBuilder/Trader objekty.
-  // Konkrétní tiskárna se nevybírá tady v kódu, ale jednou nastaví v iOS
-  // Nastavení → Star webPRNT (Printer + Port Name podle sériového čísla).
+  // ---------- Tisk na Epson TM-P20II přes Wi-Fi (ePOS-Print XML) ----------
+  // Appka pošle na tiskárnu obyčejný HTTP(S) POST s malým XML dokumentem —
+  // žádná zvláštní appka/prohlížeč navíc není potřeba, funguje přímo z
+  // tohoto Safari. Adresu tiskárny (IP) si appka bere z nastavení (viz
+  // getPrinterHost/PRINTER_HOST_STORAGE_KEY výše, tlačítko "⚙ Nastavit
+  // tiskárnu" na úvodní obrazovce).
   //
-  // POZNÁMKA PRO LUKÁŠE: Přesné názvy parametrů u createTextElement/
-  // createAlignmentElement jsem čerpal z veřejné dokumentace, ale bez
-  // reálné tiskárny po ruce je nemůžu odzkoušet naživo — než to poprvé
-  // vyzkoušíš, porovnej prosím s referencí v SDK (soubor
-  // StarWebPrintBuilder.js má komentáře) a klidně mi pošli chybovou
-  // hlášku, pokud se něco nebude sedět, doladíme to napřesno.
-  function buildStarPrintRequest(record){
+  // POZNÁMKA PRO LUKÁŠE: Appka běží na https://kokrsnek.github.io, takže
+  // Safari zablokuje obyčejné http:// volání na tiskárnu (mixed content).
+  // Řešení: v tiskárně přes TMNet WebConfig zapni HTTPS (SSL/TLS) na tom
+  // stejném ePOS-Print endpointu, a v Safari jednou navštiv přímo
+  // https://<IP tiskárny>/ a potvrď "Navštívit web" u varování o
+  // certifikátu (tiskárna má vlastní, nedůvěryhodný certifikát) — pak by
+  // měla fungovat i volání odsud z appky. Přesné názvy XML elementů a
+  // atributů (text/align/em/width/height, formát SOAP obálky) jsem čerpal
+  // z veřejné Epson dokumentace (ePOS-Print XML User's Manual), ale bez
+  // reálné tiskárny po ruce jsem to nemohl naživo odzkoušet — použij
+  // tlačítko "🖨 Otestovat tiskárnu" na úvodní obrazovce a pošli mi
+  // prosím přesné znění chyby, pokud se něco nebude sedět, doladíme to.
+  function escapeXml(str){
+    return String(str == null ? '' : str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  // Jeden řádek/blok textu. Vždy explicitně nastaví zarovnání/tučnost/
+  // velikost (i na výchozí hodnoty), ať se nic "nepřenáší" omylem z
+  // předchozího volání — každé volání textEl() tak dává předvídatelný
+  // výsledek bez ohledu na to, co se tisklo předtím.
+  function textEl(data, opts){
+    opts = opts || {};
+    const align = opts.align || 'left';
+    const em = opts.em ? 'true' : 'false';
+    const width = opts.width || 1;
+    const height = opts.height || 1;
+    return '<text align="' + align + '" em="' + em + '" width="' + width + '" height="' + height + '">' +
+      escapeXml(data) + '</text>';
+  }
+
+  function buildEposPrintXml(record){
     const isBoticka = record.docType === 'boticka';
-    const builder = new StarWebPrintBuilder();
-    let req = '';
+    let x = '';
 
-    req += builder.createInitializationElement();
-    req += builder.createAlignmentElement({ position: 'center' });
-
-    req += builder.createTextElement({ data: (isBoticka ? 'OZNÁMENÍ' : 'VÝZVA') + '\n', width: 2, height: 2, emphasis: true });
-    req += builder.createTextElement({ data: (isBoticka ? 'o použití technického prostředku k zabránění odjezdu vozidla' : 'pro nepřítomného pachatele přestupku') + '\n' });
+    x += textEl((isBoticka ? 'OZNÁMENÍ' : 'VÝZVA') + '\n', { align: 'center', width: 2, height: 2, em: true });
+    x += textEl((isBoticka ? 'o použití technického prostředku k zabránění odjezdu vozidla' : 'pro nepřítomného pachatele přestupku') + '\n', { align: 'center' });
     if(record.noticeNumber){
-      req += builder.createTextElement({ data: 'Č. j.: ' + record.noticeNumber + '\n', emphasis: true });
+      x += textEl('Č. j.: ' + record.noticeNumber + '\n', { align: 'center', em: true });
     }
-    req += builder.createTextElement({ data: '\nREGISTRAČNÍ ZNAČKA\n' });
-    req += builder.createTextElement({ data: (record.plate || '') + '\n', width: 3, height: 3, emphasis: true });
+    x += textEl('\nREGISTRAČNÍ ZNAČKA\n', { align: 'center' });
+    x += textEl((record.plate || '') + '\n', { align: 'center', width: 3, height: 3, em: true });
     if(record.brand || record.color){
-      req += builder.createTextElement({ data: [record.brand, record.color].filter(Boolean).join(', ') + '\n' });
+      x += textEl([record.brand, record.color].filter(Boolean).join(', ') + '\n', { align: 'center' });
     }
-    req += builder.createRuledLineElement({ thickness: 2, lineWidth: 384 });
-    req += builder.createTextElement({
-      data: 'Datum: ' + formatDateCz(record.date) + '   Čas: ' + (record.time || '—') + '\n\n'
-    });
+    x += textEl('--------------------------------\n', { align: 'center' });
+    x += textEl('Datum: ' + formatDateCz(record.date) + '   Čas: ' + (record.time || '—') + '\n\n', { align: 'left' });
 
-    req += builder.createTextElement({ data: 'Místo přestupku\n', emphasis: true });
-    req += builder.createTextElement({ data: (record.address || '') + '\n\n' });
+    x += textEl('Místo přestupku\n', { align: 'left', em: true });
+    x += textEl((record.address || '') + '\n\n', { align: 'left' });
 
-    req += builder.createTextElement({ data: 'Právní kvalifikace přestupku\n', emphasis: true });
-    if(record.offenseLabel) req += builder.createTextElement({ data: record.offenseLabel + '\n' });
-    if(record.offenseCitation) req += builder.createTextElement({ data: record.offenseCitation + '\n' });
-    req += builder.createTextElement({ data: '\n' });
+    x += textEl('Právní kvalifikace přestupku\n', { align: 'left', em: true });
+    if(record.offenseLabel) x += textEl(record.offenseLabel + '\n', { align: 'left' });
+    if(record.offenseCitation) x += textEl(record.offenseCitation + '\n', { align: 'left' });
+    x += textEl('\n', { align: 'left' });
 
     // "Botička" (TPZOV) — jiný text než běžná Výzva. Zatím pracovní návrh
     // (žádost byla výslovně o "nějaký random text"), doporučuju znění
     // před reálným použitím v terénu projít a případně upravit.
     if(isBoticka){
-      req += builder.createTextElement({
-        data: 'Oznamuji Vám, že na výše uvedeném vozidle byl umístěn technický prostředek ' +
-              'k zabránění odjezdu vozidla (TPZOV) dle § 45a zákona č. 361/2000 Sb., ' +
-              'o silničním provozu, a to z důvodu porušení pravidel uvedeného výše.\n\n'
-      });
-      req += builder.createTextElement({ data: 'POUČENÍ\n', emphasis: true });
-      req += builder.createTextElement({
-        data: 'Technický prostředek bude odstraněn po zaplacení nákladů spojených s jeho ' +
-              'použitím a odstraněním, a to na Městské policii Blansko, Sadová 2. ' +
-              'Neoprávněné odstranění technického prostředku vlastní silou je přestupkem ' +
-              'dle § 125c odst. 1 písm. k) zákona č. 361/2000 Sb.\n\n'
-      });
+      x += textEl(
+        'Oznamuji Vám, že na výše uvedeném vozidle byl umístěn technický prostředek ' +
+        'k zabránění odjezdu vozidla (TPZOV) dle § 45a zákona č. 361/2000 Sb., ' +
+        'o silničním provozu, a to z důvodu porušení pravidel uvedeného výše.\n\n',
+        { align: 'left' }
+      );
+      x += textEl('POUČENÍ\n', { align: 'left', em: true });
+      x += textEl(
+        'Technický prostředek bude odstraněn po zaplacení nákladů spojených s jeho ' +
+        'použitím a odstraněním, a to na Městské policii Blansko, Sadová 2. ' +
+        'Neoprávněné odstranění technického prostředku vlastní silou je přestupkem ' +
+        'dle § 125c odst. 1 písm. k) zákona č. 361/2000 Sb.\n\n',
+        { align: 'left' }
+      );
     } else {
-      req += builder.createTextElement({
-        data: 'Dostavte se proto ve vlastním zájmu, a to neprodleně na Městskou policii ' +
-              'Blansko, Sadová 2. Tuto výzvu vezměte s sebou.\n\n'
-      });
-      req += builder.createTextElement({ data: 'POUČENÍ\n', emphasis: true });
-      req += builder.createTextElement({
-        data: 'Dle § 11/odst. 1 a 2, zák. 553/1991 Sb., o obecní policii je osoba povinna ' +
-              'výzvě vyhovět. Nedostavíte-li se bez dostatečné omluvy, můžete být dle ' +
-              '§ 11/odst. 8 výše uvedeného zákona předveden(a) nebo může být přestupek ' +
-              'oznámen příslušnému správnímu orgánu k projednání.\n\n'
-      });
+      x += textEl(
+        'Dostavte se proto ve vlastním zájmu, a to neprodleně na Městskou policii ' +
+        'Blansko, Sadová 2. Tuto výzvu vezměte s sebou.\n\n',
+        { align: 'left' }
+      );
+      x += textEl('POUČENÍ\n', { align: 'left', em: true });
+      x += textEl(
+        'Dle § 11/odst. 1 a 2, zák. 553/1991 Sb., o obecní policii je osoba povinna ' +
+        'výzvě vyhovět. Nedostavíte-li se bez dostatečné omluvy, můžete být dle ' +
+        '§ 11/odst. 8 výše uvedeného zákona předveden(a) nebo může být přestupek ' +
+        'oznámen příslušnému správnímu orgánu k projednání.\n\n',
+        { align: 'left' }
+      );
     }
 
     if(record.officerName){
-      req += builder.createTextElement({ data: 'str. ' + record.officerName + '\n', emphasis: true });
+      x += textEl('str. ' + record.officerName + '\n', { align: 'left', em: true });
     }
-    req += builder.createTextElement({ data: 'Městská policie Blansko\n', emphasis: true });
-    req += builder.createTextElement({ data: 'Sadová 149/2, 678 01 Blansko\n' });
-    req += builder.createTextElement({ data: 'Tel.: 775 859 486, 516 418 418\n' });
+    x += textEl('Městská policie Blansko\n', { align: 'left', em: true });
+    x += textEl('Sadová 149/2, 678 01 Blansko\n', { align: 'left' });
+    x += textEl('Tel.: 775 859 486, 516 418 418\n', { align: 'left' });
 
-    // SM-T300i má odtrhávací lištu, ne motorizovaný ořez — jen posuneme
-    // papír, aby šla výzva pohodlně utrhnout. createCutPaperElement
-    // necháváme jako pojistku pro modely, které cutter mají; tiskárny
-    // bez něj tento příkaz bezpečně ignorují.
-    req += builder.createFeedElement({ unit: 40 });
-    req += builder.createCutPaperElement({ feed: false });
+    // TM-P20II má odtrhávací lištu, ne motorizovaný ořez — jen posuneme
+    // papír, aby šla výzva pohodlně utrhnout. Žádný <cut> element proto
+    // neposíláme (u modelů bez cutteru by ho tiskárna mohla i odmítnout
+    // chybou, místo aby ho jen tiše ignorovala jako to dělal Star SDK).
+    x += '<feed unit="60"/>';
 
-    return req;
+    return x;
   }
 
-  // Vrací Promise<boolean> — true jen když tiskárna potvrdí úspěšný tisk.
-  function printViaStarWebPRNT(record){
-    return new Promise((resolve)=>{
-      if(typeof StarWebPrintBuilder === 'undefined' || typeof StarWebPrintTrader === 'undefined'){
-        setSubmitNote('Tisk funguje jen v appce "Star webPRNT Browser" (ne v běžném Safari). ' +
-          'Otevři v ní tuto stejnou adresu a zkus to znovu.', 'err');
+  function epsonSoapEnvelope(innerXml){
+    return '<?xml version="1.0" encoding="utf-8"?>' +
+      '<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/">' +
+      '<s:Body>' +
+      '<epos-print xmlns="http://www.epson-pos.com/schemas/2011/03/epos-print">' +
+      innerXml +
+      '</epos-print>' +
+      '</s:Body>' +
+      '</s:Envelope>';
+  }
+
+  // Sestaví plnou adresu tiskárny. Pokud je uložená hodnota jen holá IP/
+  // doména (bez http/https), doplní https:// (kvůli mixed-content
+  // blokaci — appka běží na https://kokrsnek.github.io). Pokud sis adresu
+  // uložil rovnou s "http://" nebo "https://", použije se přesně tak.
+  function epsonPrinterEndpoint(){
+    const host = getPrinterHost();
+    if(!host) return '';
+    const base = /^https?:\/\//i.test(host) ? host.replace(/\/+$/, '') : 'https://' + host;
+    return base + '/cgi-bin/epos/service.cgi?devid=local_printer&timeout=10000';
+  }
+
+  // Vrací Promise<boolean> — true jen když tiskárna potvrdí úspěšný tisk
+  // (nebo úspěšně odpoví na testovací dotaz, je-li record.testOnly).
+  function printViaEpson(record){
+    return new Promise(async (resolve)=>{
+      const host = getPrinterHost();
+      if(!host){
+        setSubmitNote('Nejdřív nastav IP adresu tiskárny (⚙ Nastavit tiskárnu na úvodní obrazovce).', 'err');
         resolve(false);
         return;
       }
-      setSubmitNote('Tisknu…', '');
+      const isTest = !!(record && record.testOnly);
+      setSubmitNote(isTest ? 'Testuju spojení s tiskárnou…' : 'Tisknu…', '');
+
+      const endpoint = epsonPrinterEndpoint();
+      const body = epsonSoapEnvelope(
+        isTest
+          ? textEl('Test spojení — RZ Scanner\n', { align: 'center' }) + '<feed unit="40"/>'
+          : buildEposPrintXml(record)
+      );
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(()=>controller.abort(), 12000);
       try{
-        const request = buildStarPrintRequest(record);
-        // Hodnota url je pro Bluetooth tiskárnu formalita — appka Star
-        // webPRNT Browser ji přesměruje na tiskárnu nastavenou v iOS
-        // Nastavení → Star webPRNT, bez ohledu na to, co je tu uvedené.
-        const trader = new StarWebPrintTrader({ url: 'https://localhost/StarWebPRNT/SendMessage' });
-        trader.onReceive = function(response){
-          const ok = !!(response && response.success);
-          setSubmitNote(ok ? '✓ Vytištěno' : 'Tiskárna nahlásila chybu.', ok ? 'ok' : 'err');
-          resolve(ok);
-        };
-        trader.onError = function(error){
-          setSubmitNote('Tisk se nezdařil: ' + (error && error.status || 'zkontroluj spárování tiskárny.'), 'err');
+        const resp = await fetch(endpoint, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'text/xml; charset=utf-8',
+            'If-Modified-Since': 'Thu, 01 Jan 1970 00:00:00 GMT',
+            'SOAPAction': '""'
+          },
+          body,
+          signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+        const text = await resp.text();
+        const xml = new DOMParser().parseFromString(text, 'text/xml');
+        const responseEl = xml.getElementsByTagName('response')[0];
+        const success = !!responseEl && /^(1|true)$/i.test(responseEl.getAttribute('success') || '');
+        if(success){
+          setSubmitNote(isTest ? '✓ Tiskárna odpověděla, spojení funguje' : '✓ Vytištěno', 'ok');
+          resolve(true);
+        } else {
+          const code = responseEl ? responseEl.getAttribute('code') : null;
+          setSubmitNote('Tiskárna nahlásila chybu' + (code ? ' (' + code + ')' : '') + '.', 'err');
           resolve(false);
-        };
-        trader.sendMessage({ request: request });
+        }
       }catch(e){
-        setSubmitNote('Tisk se nezdařil (' + e.message + ').', 'err');
+        clearTimeout(timeoutId);
+        const bareHost = host.replace(/^https?:\/\//i, '').replace(/\/+$/, '');
+        const msg = e && e.name === 'AbortError'
+          ? 'Tiskárna neodpověděla včas — zkontroluj, že je zapnutá a telefon je připojený na stejnou síť/Wi-Fi Direct.'
+          : 'Spojení s tiskárnou selhalo. Pokud jsi ještě v Safari nenavštívil https://' + bareHost + '/ ' +
+            'a nepotvrdil certifikát tiskárny, udělej to nejdřív (stačí jednou).';
+        setSubmitNote(msg, 'err');
         resolve(false);
       }
     });
