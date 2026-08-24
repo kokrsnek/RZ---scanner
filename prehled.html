@@ -723,10 +723,14 @@
     }
 
     // Výzva — úzký orámovaný blok v šíři 58 mm (odpovídá reálné šířce tiskárny).
+    // Obsah je záměrně stejný jako to, co appka posílá na tepelnou tiskárnu
+    // (viz buildEposPrintXml výše) — jméno strážníka tu ale zůstává celé
+    // (na tisku je jen služební číslo, viz officerPrintLabel).
+    const isBoticka = record.docType === 'boticka';
     body += docxPara('Výzva', { bold: true, size: 24, align: 'center', spacingAfter: 200, pageBreakBefore: true });
     let inner = '';
-    inner += docxPara('VÝZVA', { bold: true, size: 22, align: 'center' });
-    inner += docxPara('pro nepřítomného pachatele přestupku', { size: 14, align: 'center' });
+    inner += docxPara(isBoticka ? 'OZNÁMENÍ' : 'VÝZVA', { bold: true, size: 22, align: 'center' });
+    inner += docxPara(isBoticka ? 'o použití technického prostředku k zabránění odjezdu vozidla' : 'pro nepřítomného pachatele přestupku', { size: 14, align: 'center' });
     if(record.noticeNumber) inner += docxPara('Č. j.: ' + record.noticeNumber, { size: 12, align: 'center', spacingAfter: 100 });
     inner += docxPara(record.plate || '', { bold: true, size: 32, align: 'center' });
     inner += docxPara('Datum: ' + formatDateCz(record.date) + '  Čas: ' + (record.time || '—'), { size: 14, align: 'center', spacingAfter: 100 });
@@ -737,8 +741,47 @@
     if(offenseLabel){
       inner += docxPara('Právní kvalifikace', { bold: true, size: 13, align: 'center' });
       inner += docxPara(offenseLabel, { size: 14, align: 'center' });
-      if(offenseCitation) inner += docxPara(offenseCitation, { size: 11, align: 'center' });
+      if(offenseCitation) inner += docxPara(offenseCitation, { size: 11, align: 'center', spacingAfter: 100 });
     }
+
+    if(isBoticka){
+      inner += docxPara(
+        'Oznamuji Vám, že na výše uvedeném vozidle byl umístěn technický prostředek k zabránění ' +
+        'odjezdu vozidla (TPZOV) dle § 45a zákona č. 361/2000 Sb., o silničním provozu, a to z důvodu ' +
+        'porušení pravidel uvedeného výše.',
+        { size: 14, align: 'center', spacingAfter: 100 }
+      );
+      inner += docxPara('POUČENÍ', { bold: true, size: 13, align: 'center' });
+      inner += docxPara(
+        'Technický prostředek bude odstraněn po zaplacení nákladů spojených s jeho použitím a ' +
+        'odstraněním, a to na Městské policii Blansko, Sadová 2. Neoprávněné odstranění technického ' +
+        'prostředku vlastní silou je přestupkem dle § 125c odst. 1 písm. k) zákona č. 361/2000 Sb.',
+        { size: 14, align: 'center', spacingAfter: 100 }
+      );
+    } else {
+      inner += docxPara(
+        'Dostavte se proto ve vlastním zájmu, a to neprodleně na Městskou policii Blansko, Sadová 2. ' +
+        'Tuto výzvu vezměte s sebou.',
+        { size: 14, align: 'center', spacingAfter: 100 }
+      );
+      inner += docxPara('POUČENÍ', { bold: true, size: 13, align: 'center' });
+      inner += docxPara(
+        'Dle § 11/odst. 1 a 2, zák. 553/1991 Sb., o obecní policii je osoba povinna výzvě vyhovět. ' +
+        'Nedostavíte-li se bez dostatečné omluvy, můžete být dle § 11/odst. 8 výše uvedeného zákona ' +
+        'předveden(a) nebo může být přestupek oznámen příslušnému správnímu orgánu k projednání.',
+        { size: 14, align: 'center', spacingAfter: 100 }
+      );
+    }
+
+    if(record.officerName){
+      inner += docxPara('str. ' + record.officerName, { bold: true, size: 14, align: 'center' });
+    }
+    inner += docxPara('Městská policie Blansko', { bold: true, size: 14, align: 'center' });
+    inner += docxPara('Sadová 149/2, 678 01 Blansko', { size: 13, align: 'center' });
+    inner += docxPara('Tel.: 775 859 486, 516 418 418', { size: 13, align: 'center', spacingAfter: 100 });
+    inner += docxPara('vygenerováno aplikací', { size: 11, align: 'center' });
+    inner += docxPara('RZ Scanner © Šuraj', { size: 11, align: 'center' });
+
     body += docxNarrowBoxTable(58, inner);
 
     const documentXml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n' +
