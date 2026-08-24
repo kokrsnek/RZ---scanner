@@ -79,7 +79,7 @@
   }
   #startScreen p{color:var(--muted); font-size:14px; line-height:1.5; max-width:320px; margin:0 0 32px;}
   .shutter-btn{
-    width:92px; height:92px; border-radius:50%;
+    width:92px; height:92px; aspect-ratio:1/1; flex:0 0 92px; border-radius:50%;
     background:radial-gradient(circle at 35% 30%, #FFC65B, var(--amber) 60%);
     border:4px solid var(--asphalt-3);
     box-shadow:0 0 0 3px var(--amber), 0 10px 30px rgba(255,176,32,.25);
@@ -277,6 +277,7 @@
   }
   .confirm-text{font-size:15.5px; color:var(--text); margin-bottom:18px; line-height:1.4;}
   .confirm-btns{display:flex; gap:12px;}
+  .confirm-btns-col{flex-direction:column;}
   .confirm-btn{
     flex:1; padding:11px 0; border-radius:10px; font-family:'Inter',sans-serif;
     font-weight:600; font-size:14.5px; cursor:pointer;
@@ -462,6 +463,21 @@
     <div class="submit-note" id="printerTestNote"></div>
     <a class="fallback-link" id="historyLink" href="https://kokrsnek.github.io/RZ---scanner/prehled.html" target="_blank" rel="noopener" style="display:inline-block;">Odeslané přestupky</a>
     <div id="camError"></div>
+    <div class="confirm-overlay" id="settingsOverlay">
+      <div class="confirm-box">
+        <div class="confirm-text">Nastavení appky</div>
+        <div class="confirm-btns confirm-btns-col">
+          <button class="confirm-btn confirm-no" id="settingsApiKeyBtn">Nastavit API klíč (Plate Recognizer)</button>
+          <button class="confirm-btn confirm-no" id="settingsVisionKeyBtn">Nastavit Vision API klíč (značka)</button>
+          <button class="confirm-btn confirm-no" id="settingsPrinterHostBtn">Nastavit tiskárnu (Epson TM-P20II)</button>
+          <button class="confirm-btn confirm-no" id="settingsPrinterTestBtn">🖨 Otestovat tiskárnu</button>
+        </div>
+        <div class="submit-note" id="settingsPrinterTestNote" style="margin-top:12px;"></div>
+        <div class="confirm-btns" style="margin-top:16px;">
+          <button class="confirm-btn confirm-yes" id="settingsCloseBtn">Zavřít</button>
+        </div>
+      </div>
+    </div>
   </div>
 
   <!-- CAMERA -->
@@ -1107,6 +1123,18 @@
       ? '⚙ Tiskárna: ' + host
       : '⚙ Nastavit tiskárnu (Epson TM-P20II)';
   }
+  // Jakmile je tiskárna jednou nastavená, appka schová oba odkazy (nastavit
+  // i otestovat) — stejný princip jako u apiKeyLink výše, ať úvodní
+  // obrazovka po prvotním nastavení zůstane čistá. Pokud bude potřeba
+  // adresu později změnit, jde to i tak přes setup odkaz s ?printerHost=...
+  // (viz začátek souboru) — appka ho zpracuje, i když je tenhle odkaz
+  // schovaný.
+  function updatePrinterHostLinkVisibility(){
+    const configured = !!getPrinterHost();
+    document.getElementById('printerHostLink').style.display = configured ? 'none' : 'block';
+    document.getElementById('printerTestLink').style.display = configured ? 'none' : 'block';
+    if(configured) setPrinterTestNote('', '');
+  }
   updatePrinterHostLinkLabel();
 
   document.getElementById('printerHostLink').addEventListener('click', ()=>{
@@ -1121,6 +1149,7 @@
     if(val !== null){
       localStorage.setItem(PRINTER_HOST_STORAGE_KEY, val.trim());
       updatePrinterHostLinkLabel();
+      updatePrinterHostLinkVisibility();
     }
   });
 
@@ -1143,6 +1172,8 @@
     await printViaEpson({ testOnly: true }, setPrinterTestNote);
     link.disabled = false;
   });
+
+  updatePrinterHostLinkVisibility();
 
   // ---------- Camera lifecycle ----------
   let nextCameraOpenIsRetry = false;
@@ -1221,7 +1252,11 @@
     video.srcObject = null;
   }
 
-  document.getElementById('startBtn').addEventListener('click', openCamera);
+  let suppressStartClick = false;
+  document.getElementById('startBtn').addEventListener('click', (e)=>{
+    if(suppressStartClick){ suppressStartClick = false; return; }
+    openCamera();
+  });
 
   // Skrytý přepínač světlý/tmavý režim — 4s podržení loga.
   (function(){
@@ -1257,6 +1292,77 @@
     logo.addEventListener('mousedown', start);
     logo.addEventListener('mouseup', cancel);
     logo.addEventListener('mouseleave', cancel);
+  })();
+
+  // Skryté nastavení appky — 4s podržení tlačítka fotoaparátu (SKENUJ).
+  // Appka schovává odkazy na nastavení API klíčů a tiskárny, jakmile jsou
+  // jednou vyplněné (viz updateApiKeyLinkVisibility/updatePrinterHostLinkVisibility
+  // výše) — tohle gesto je jediná cesta, jak se k nim pak vrátit. Skryté
+  // odkazy (apiKeyLink, visionApiKeyLink, printerHostLink) zůstávají v DOM
+  // beze změny, tlačítka v overlay jen spustí jejich existující .click()
+  // logiku (prompt), ať se nic neduplikuje.
+  (function(){
+    const btn = document.getElementById('startBtn');
+    const overlay = document.getElementById('settingsOverlay');
+    if(!btn || !overlay) return;
+    let holdTimer = null;
+    let startX = 0, startY = 0;
+    const MOVE_TOLERANCE = 24;
+    const start = (e)=>{
+      clearTimeout(holdTimer);
+      if(e.touches && e.touches[0]){
+        startX = e.touches[0].clientX;
+        startY = e.touches[0].clientY;
+      }
+      holdTimer = setTimeout(()=>{
+        suppressStartClick = true;
+        overlay.classList.add('open');
+      }, 4000);
+    };
+    const cancel = ()=> clearTimeout(holdTimer);
+    const moveCheck = (e)=>{
+      if(!holdTimer || !e.touches || !e.touches[0]) return;
+      const dx = e.touches[0].clientX - startX;
+      const dy = e.touches[0].clientY - startY;
+      if(Math.hypot(dx, dy) > MOVE_TOLERANCE) cancel();
+    };
+    btn.addEventListener('touchstart', start, { passive: true });
+    btn.addEventListener('touchend', cancel);
+    btn.addEventListener('touchcancel', cancel);
+    btn.addEventListener('touchmove', moveCheck, { passive: true });
+    btn.addEventListener('mousedown', start);
+    btn.addEventListener('mouseup', cancel);
+    btn.addEventListener('mouseleave', cancel);
+
+    document.getElementById('settingsCloseBtn').addEventListener('click', ()=>{
+      overlay.classList.remove('open');
+    });
+    document.getElementById('settingsApiKeyBtn').addEventListener('click', ()=>{
+      document.getElementById('apiKeyLink').click();
+    });
+    document.getElementById('settingsVisionKeyBtn').addEventListener('click', ()=>{
+      document.getElementById('visionApiKeyLink').click();
+    });
+    document.getElementById('settingsPrinterHostBtn').addEventListener('click', ()=>{
+      document.getElementById('printerHostLink').click();
+    });
+    document.getElementById('settingsPrinterTestBtn').addEventListener('click', async ()=>{
+      const testBtn = document.getElementById('settingsPrinterTestBtn');
+      const note = document.getElementById('settingsPrinterTestNote');
+      const report = (text, kind)=>{
+        note.textContent = text;
+        note.className = 'submit-note' + (kind ? ' ' + kind : '');
+        note.style.display = text ? 'block' : 'none';
+      };
+      if(!getPrinterHost()){
+        report('Nejdřív nastav IP adresu tiskárny (tlačítko výše).', 'err');
+        return;
+      }
+      testBtn.disabled = true;
+      report('🖨 Testuju…', '');
+      await printViaEpson({ testOnly: true }, report);
+      testBtn.disabled = false;
+    });
   })();
   document.getElementById('resultCloseBtn').addEventListener('click', ()=>{
     show('start');
