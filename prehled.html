@@ -901,13 +901,13 @@
     x += textEl('--------------------------------\n', { align: 'center' });
     x += textEl('Datum: ' + formatDateCz(record.date) + '   Čas: ' + (record.time || '—') + '\n\n', { align: 'left' });
 
-    x += textEl('Místo přestupku\n', { align: 'left', em: true });
-    x += textEl(wrapWords(record.address || '') + '\n\n', { align: 'left' });
+    x += textEl('Místo přestupku\n', { align: 'center', em: true });
+    x += textEl(wrapWords(record.address || '') + '\n\n', { align: 'center' });
 
-    x += textEl('Právní kvalifikace přestupku\n', { align: 'left', em: true });
-    if(record.offenseLabel) x += textEl(wrapWords(record.offenseLabel) + '\n', { align: 'left' });
-    if(record.offenseCitation) x += textEl(wrapWords(record.offenseCitation) + '\n', { align: 'left' });
-    x += textEl('\n', { align: 'left' });
+    x += textEl('Právní kvalifikace přestupku\n', { align: 'center', em: true });
+    if(record.offenseLabel) x += textEl(wrapWords(record.offenseLabel) + '\n', { align: 'center' });
+    if(record.offenseCitation) x += textEl(wrapWords(record.offenseCitation) + '\n', { align: 'center' });
+    x += textEl('\n', { align: 'center' });
 
     if(isBoticka){
       x += textEl(
@@ -916,7 +916,7 @@
           'k zabránění odjezdu vozidla (TPZOV) dle § 45a zákona č. 361/2000 Sb., ' +
           'o silničním provozu, a to z důvodu porušení pravidel uvedeného výše.'
         ) + '\n\n',
-        { align: 'left' }
+        { align: 'center' }
       );
       x += textEl('POUČENÍ\n', { align: 'center', em: true });
       x += textEl(
@@ -934,7 +934,7 @@
           'Dostavte se proto ve vlastním zájmu, a to neprodleně na Městskou policii ' +
           'Blansko, Sadová 2. Tuto výzvu vezměte s sebou.'
         ) + '\n\n',
-        { align: 'left' }
+        { align: 'center' }
       );
       x += textEl('POUČENÍ\n', { align: 'center', em: true });
       x += textEl(
@@ -951,9 +951,9 @@
     if(record.officerName){
       x += textEl(officerPrintLabel(record.officerName) + '\n', { align: 'center', em: true });
     }
-    x += textEl('Městská policie Blansko\n', { align: 'left', em: true });
-    x += textEl('Sadová 149/2, 678 01 Blansko\n', { align: 'left' });
-    x += textEl('Tel.: 775 859 486, 516 418 418\n\n', { align: 'left' });
+    x += textEl('Městská policie Blansko\n', { align: 'center', em: true });
+    x += textEl('Sadová 149/2, 678 01 Blansko\n', { align: 'center' });
+    x += textEl('Tel.: 775 859 486, 516 418 418\n\n', { align: 'center' });
     x += textEl('vygenerováno aplikací\n', { align: 'center' });
     x += textEl('RZ Scanner © Šuraj\n', { align: 'center' });
 
