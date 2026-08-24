@@ -2013,12 +2013,65 @@
       escapeXml(data) + '</text>';
   }
 
+  // Tiskárna sama zalamuje řádky natvrdo po znacích (i uprostřed slova),
+  // což na výtisku vypadá ošklivě ("...vlastním zá" / "jmu"). Tahle funkce
+  // zalomí text sama, vždy na mezeře, ať se slova nedělí. 32 znaků na
+  // řádek odpovídá výchozímu fontu TM-P20II na 58mm papíře (ověřeno podle
+  // skutečného výtisku). Zachovává existující odřádkování (prázdné řádky
+  // mezi odstavci).
+  function wrapWords(text, width){
+    width = width || 32;
+    return String(text == null ? '' : text).split('\n').map(function(line){
+      if(line.length <= width) return line;
+      const words = line.split(' ');
+      const lines = [];
+      let cur = '';
+      words.forEach(function(w){
+        if(cur === ''){
+          cur = w;
+        } else if((cur + ' ' + w).length <= width){
+          cur += ' ' + w;
+        } else {
+          lines.push(cur);
+          cur = w;
+        }
+      });
+      if(cur) lines.push(cur);
+      return lines.join('\n');
+    }).join('\n');
+  }
+
+  // Čísla strážníků pro tištěnou výzvu (str. ČÍSLO na tisku), zatímco
+  // v náhledu/DOCX a přehledu se dál používá plné jméno (str. Jméno) —
+  // viz použití OFFICER_NUMBERS jen v buildEposPrintXml() níže. Klíče
+  // musí přesně sedět na text v #officerSelect (viz seznam v HTML).
+  const OFFICER_NUMBERS = {
+    'Adámek Jaroslav': '995',
+    'Grénar Martin': '1774',
+    'Havel Radek': '1794',
+    'Hlaváček Michal': '177',
+    'Hofman Radek': '1744',
+    'Chalupa Martin': '1781',
+    'Juračka Lukáš': '1048',
+    'Liška Michal': '2053',
+    'Menšík Jaroslav': '202',
+    'Parolek Antonín': '611',
+    'Přikryl Miroslav': '1996',
+    'Sehnal Petr': '182',
+    'Šenk Kamil': '723',
+    'Škvařil Libor': '1564',
+    'Tesař Libor': '188',
+    'Tóth Ondřej': '2401',
+    'Tóth Pavel': '775',
+    'Vašíček Zdeněk': '1255',
+  };
+
   function buildEposPrintXml(record){
     const isBoticka = record.docType === 'boticka';
     let x = '';
 
     x += textEl((isBoticka ? 'OZNÁMENÍ' : 'VÝZVA') + '\n', { align: 'center', width: 2, height: 2, em: true });
-    x += textEl((isBoticka ? 'o použití technického prostředku k zabránění odjezdu vozidla' : 'pro nepřítomného pachatele přestupku') + '\n', { align: 'center' });
+    x += textEl(wrapWords(isBoticka ? 'o použití technického prostředku k zabránění odjezdu vozidla' : 'pro nepřítomného pachatele přestupku') + '\n', { align: 'center' });
     if(record.noticeNumber){
       x += textEl('Č. j.: ' + record.noticeNumber + '\n', { align: 'center', em: true });
     }
@@ -2031,11 +2084,11 @@
     x += textEl('Datum: ' + formatDateCz(record.date) + '   Čas: ' + (record.time || '—') + '\n\n', { align: 'left' });
 
     x += textEl('Místo přestupku\n', { align: 'left', em: true });
-    x += textEl((record.address || '') + '\n\n', { align: 'left' });
+    x += textEl(wrapWords(record.address || '') + '\n\n', { align: 'left' });
 
     x += textEl('Právní kvalifikace přestupku\n', { align: 'left', em: true });
-    if(record.offenseLabel) x += textEl(record.offenseLabel + '\n', { align: 'left' });
-    if(record.offenseCitation) x += textEl(record.offenseCitation + '\n', { align: 'left' });
+    if(record.offenseLabel) x += textEl(wrapWords(record.offenseLabel) + '\n', { align: 'left' });
+    if(record.offenseCitation) x += textEl(wrapWords(record.offenseCitation) + '\n', { align: 'left' });
     x += textEl('\n', { align: 'left' });
 
     // "Botička" (TPZOV) — jiný text než běžná Výzva. Zatím pracovní návrh
@@ -2043,47 +2096,58 @@
     // před reálným použitím v terénu projít a případně upravit.
     if(isBoticka){
       x += textEl(
-        'Oznamuji Vám, že na výše uvedeném vozidle byl umístěn technický prostředek ' +
-        'k zabránění odjezdu vozidla (TPZOV) dle § 45a zákona č. 361/2000 Sb., ' +
-        'o silničním provozu, a to z důvodu porušení pravidel uvedeného výše.\n\n',
+        wrapWords(
+          'Oznamuji Vám, že na výše uvedeném vozidle byl umístěn technický prostředek ' +
+          'k zabránění odjezdu vozidla (TPZOV) dle § 45a zákona č. 361/2000 Sb., ' +
+          'o silničním provozu, a to z důvodu porušení pravidel uvedeného výše.'
+        ) + '\n\n',
         { align: 'left' }
       );
       x += textEl('POUČENÍ\n', { align: 'left', em: true });
       x += textEl(
-        'Technický prostředek bude odstraněn po zaplacení nákladů spojených s jeho ' +
-        'použitím a odstraněním, a to na Městské policii Blansko, Sadová 2. ' +
-        'Neoprávněné odstranění technického prostředku vlastní silou je přestupkem ' +
-        'dle § 125c odst. 1 písm. k) zákona č. 361/2000 Sb.\n\n',
+        wrapWords(
+          'Technický prostředek bude odstraněn po zaplacení nákladů spojených s jeho ' +
+          'použitím a odstraněním, a to na Městské policii Blansko, Sadová 2. ' +
+          'Neoprávněné odstranění technického prostředku vlastní silou je přestupkem ' +
+          'dle § 125c odst. 1 písm. k) zákona č. 361/2000 Sb.'
+        ) + '\n\n',
         { align: 'left' }
       );
     } else {
       x += textEl(
-        'Dostavte se proto ve vlastním zájmu, a to neprodleně na Městskou policii ' +
-        'Blansko, Sadová 2. Tuto výzvu vezměte s sebou.\n\n',
+        wrapWords(
+          'Dostavte se proto ve vlastním zájmu, a to neprodleně na Městskou policii ' +
+          'Blansko, Sadová 2. Tuto výzvu vezměte s sebou.'
+        ) + '\n\n',
         { align: 'left' }
       );
       x += textEl('POUČENÍ\n', { align: 'left', em: true });
       x += textEl(
-        'Dle § 11/odst. 1 a 2, zák. 553/1991 Sb., o obecní policii je osoba povinna ' +
-        'výzvě vyhovět. Nedostavíte-li se bez dostatečné omluvy, můžete být dle ' +
-        '§ 11/odst. 8 výše uvedeného zákona předveden(a) nebo může být přestupek ' +
-        'oznámen příslušnému správnímu orgánu k projednání.\n\n',
+        wrapWords(
+          'Dle § 11/odst. 1 a 2, zák. 553/1991 Sb., o obecní policii je osoba povinna ' +
+          'výzvě vyhovět. Nedostavíte-li se bez dostatečné omluvy, můžete být dle ' +
+          '§ 11/odst. 8 výše uvedeného zákona předveden(a) nebo může být přestupek ' +
+          'oznámen příslušnému správnímu orgánu k projednání.'
+        ) + '\n\n',
         { align: 'left' }
       );
     }
 
     if(record.officerName){
-      x += textEl('str. ' + record.officerName + '\n', { align: 'left', em: true });
+      const officerId = OFFICER_NUMBERS[record.officerName];
+      x += textEl('str. ' + (officerId || record.officerName) + '\n', { align: 'left', em: true });
     }
     x += textEl('Městská policie Blansko\n', { align: 'left', em: true });
     x += textEl('Sadová 149/2, 678 01 Blansko\n', { align: 'left' });
     x += textEl('Tel.: 775 859 486, 516 418 418\n', { align: 'left' });
 
     // TM-P20II má odtrhávací lištu, ne motorizovaný ořez — jen posuneme
-    // papír, aby šla výzva pohodlně utrhnout. Žádný <cut> element proto
-    // neposíláme (u modelů bez cutteru by ho tiskárna mohla i odmítnout
-    // chybou, místo aby ho jen tiše ignorovala jako to dělal Star SDK).
-    x += '<feed unit="60"/>';
+    // papír, aby šla výzva pohodlně utrhnout, s rezervou pod posledním
+    // řádkem (telefonní čísla), ať se neodtrhává přímo v textu. Žádný
+    // <cut> element proto neposíláme (u modelů bez cutteru by ho tiskárna
+    // mohla i odmítnout chybou, místo aby ho jen tiše ignorovala jako to
+    // dělal Star SDK).
+    x += '<feed unit="130"/>';
 
     return x;
   }
