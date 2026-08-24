@@ -459,6 +459,7 @@
     <button class="fallback-link" id="visionApiKeyLink">⚙ Nastavit Vision API klíč (značka)</button>
     <button class="fallback-link" id="printerHostLink">⚙ Nastavit tiskárnu (Epson TM-P20II)</button>
     <button class="fallback-link" id="printerTestLink">🖨 Otestovat tiskárnu</button>
+    <div class="submit-note" id="printerTestNote"></div>
     <a class="fallback-link" id="historyLink" href="https://kokrsnek.github.io/RZ---scanner/prehled.html" target="_blank" rel="noopener" style="display:inline-block;">Odeslané přestupky</a>
     <div id="camError"></div>
   </div>
@@ -1123,6 +1124,13 @@
     }
   });
 
+  function setPrinterTestNote(text, kind){
+    const note = document.getElementById('printerTestNote');
+    note.textContent = text;
+    note.className = 'submit-note' + (kind ? ' ' + kind : '');
+    note.style.display = text ? 'block' : 'none';
+  }
+
   document.getElementById('printerTestLink').addEventListener('click', async ()=>{
     const link = document.getElementById('printerTestLink');
     const host = getPrinterHost();
@@ -1131,14 +1139,9 @@
       return;
     }
     link.disabled = true;
-    link.textContent = '🖨 Testuju…';
-    const ok = await printViaEpson({ testOnly: true });
+    setPrinterTestNote('🖨 Testuju…', '');
+    await printViaEpson({ testOnly: true }, setPrinterTestNote);
     link.disabled = false;
-    updatePrinterHostLinkLabel();
-    if(!ok){
-      // printViaEpson už zobrazuje konkrétní chybu přes alert níže,
-      // tady jen obnovíme popisek tlačítka.
-    }
   });
 
   // ---------- Camera lifecycle ----------
@@ -2109,16 +2112,23 @@
 
   // Vrací Promise<boolean> — true jen když tiskárna potvrdí úspěšný tisk
   // (nebo úspěšně odpoví na testovací dotaz, je-li record.testOnly).
-  function printViaEpson(record){
+  // onStatus(text, kind) je volitelný — použije se pro průběžné hlášky
+  // (např. "Testuju…", "✓ Vytištěno"). Když se nepředá, použije se
+  // setSubmitNote (stav na obrazovce po odeslání přestupku). Tlačítko
+  // "Otestovat tiskárnu" na úvodní obrazovce si posílá vlastní
+  // setPrinterTestNote, protože #submitNote leží na úplně jiné obrazovce
+  // a byl by neviditelný.
+  function printViaEpson(record, onStatus){
+    const report = onStatus || setSubmitNote;
     return new Promise(async (resolve)=>{
       const host = getPrinterHost();
       if(!host){
-        setSubmitNote('Nejdřív nastav IP adresu tiskárny (⚙ Nastavit tiskárnu na úvodní obrazovce).', 'err');
+        report('Nejdřív nastav IP adresu tiskárny (⚙ Nastavit tiskárnu na úvodní obrazovce).', 'err');
         resolve(false);
         return;
       }
       const isTest = !!(record && record.testOnly);
-      setSubmitNote(isTest ? 'Testuju spojení s tiskárnou…' : 'Tisknu…', '');
+      report(isTest ? 'Testuju spojení s tiskárnou…' : 'Tisknu…', '');
 
       const endpoint = epsonPrinterEndpoint();
       const body = epsonSoapEnvelope(
@@ -2146,11 +2156,11 @@
         const responseEl = xml.getElementsByTagName('response')[0];
         const success = !!responseEl && /^(1|true)$/i.test(responseEl.getAttribute('success') || '');
         if(success){
-          setSubmitNote(isTest ? '✓ Tiskárna odpověděla, spojení funguje' : '✓ Vytištěno', 'ok');
+          report(isTest ? '✓ Tiskárna odpověděla, spojení funguje' : '✓ Vytištěno', 'ok');
           resolve(true);
         } else {
           const code = responseEl ? responseEl.getAttribute('code') : null;
-          setSubmitNote('Tiskárna nahlásila chybu' + (code ? ' (' + code + ')' : '') + '.', 'err');
+          report('Tiskárna nahlásila chybu' + (code ? ' (' + code + ')' : '') + '.', 'err');
           resolve(false);
         }
       }catch(e){
@@ -2160,7 +2170,7 @@
           ? 'Tiskárna neodpověděla včas — zkontroluj, že je zapnutá a telefon je připojený na stejnou síť/Wi-Fi Direct.'
           : 'Spojení s tiskárnou selhalo. Pokud jsi ještě v Safari nenavštívil https://' + bareHost + '/ ' +
             'a nepotvrdil certifikát tiskárny, udělej to nejdřív (stačí jednou).';
-        setSubmitNote(msg, 'err');
+        report(msg, 'err');
         resolve(false);
       }
     });
