@@ -2118,6 +2118,16 @@
   // "Otestovat tiskárnu" na úvodní obrazovce si posílá vlastní
   // setPrinterTestNote, protože #submitNote leží na úplně jiné obrazovce
   // a byl by neviditelný.
+  //
+  // POZNÁMKA PRO LUKÁŠE: Appka běží na jiné adrese (kokrsnek.github.io) než
+  // tiskárna (172.16.10.1), takže jde o cross-origin volání a prohlížeč ho
+  // hlídá přes CORS — pokud tiskárna v odpovědi neposílá hlavičku
+  // Access-Control-Allow-Origin, JS nesmí odpověď přečíst, i kdyby tisk na
+  // pozadí proběhl. Proto request držíme co nejjednodušší (bez vlastních
+  // hlaviček navíc, které by vyvolaly tzv. "preflight" dotaz), a když i tak
+  // prohlížeč volání odmítne, zkusíme to znovu v režimu "no-cors" — appka
+  // pak sice nepozná jistě, jestli tisk skutečně proběhl, ale požadavek se
+  // aspoň odešle a tiskárna by měla vytisknout.
   function printViaEpson(record, onStatus){
     const report = onStatus || setSubmitNote;
     return new Promise(async (resolve)=>{
@@ -2137,42 +2147,74 @@
           : buildEposPrintXml(record)
       );
 
-      const controller = new AbortController();
-      const timeoutId = setTimeout(()=>controller.abort(), 12000);
-      try{
-        const resp = await fetch(endpoint, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'text/xml; charset=utf-8',
-            'If-Modified-Since': 'Thu, 01 Jan 1970 00:00:00 GMT',
-            'SOAPAction': '""'
-          },
-          body,
-          signal: controller.signal
-        });
-        clearTimeout(timeoutId);
-        const text = await resp.text();
-        const xml = new DOMParser().parseFromString(text, 'text/xml');
-        const responseEl = xml.getElementsByTagName('response')[0];
-        const success = !!responseEl && /^(1|true)$/i.test(responseEl.getAttribute('success') || '');
-        if(success){
-          report(isTest ? '✓ Tiskárna odpověděla, spojení funguje' : '✓ Vytištěno', 'ok');
-          resolve(true);
-        } else {
+      // Content-Type: text/plain drží požadavek v mezích tzv. "jednoduchého"
+      // (CORS-safelisted) požadavku, který nevyvolá preflight OPTIONS dotaz —
+      // ten by malý webserver tiskárny nejspíš neuměl zpracovat. Tiskárna XML
+      // obsah těla čte bez ohledu na deklarovaný Content-Type.
+      async function attempt(mode){
+        const controller = new AbortController();
+        const timeoutId = setTimeout(()=>controller.abort(), 12000);
+        try{
+          const resp = await fetch(endpoint, {
+            method: 'POST',
+            mode,
+            headers: { 'Content-Type': 'text/plain' },
+            body,
+            signal: controller.signal
+          });
+          clearTimeout(timeoutId);
+          return { ok: true, resp };
+        }catch(e){
+          clearTimeout(timeoutId);
+          return { ok: false, error: e };
+        }
+      }
+
+      let result = await attempt('cors');
+      if(result.ok){
+        try{
+          const text = await result.resp.text();
+          const xml = new DOMParser().parseFromString(text, 'text/xml');
+          const responseEl = xml.getElementsByTagName('response')[0];
+          const success = !!responseEl && /^(1|true)$/i.test(responseEl.getAttribute('success') || '');
+          if(success){
+            report(isTest ? '✓ Tiskárna odpověděla, spojení funguje' : '✓ Vytištěno', 'ok');
+            resolve(true);
+            return;
+          }
           const code = responseEl ? responseEl.getAttribute('code') : null;
           report('Tiskárna nahlásila chybu' + (code ? ' (' + code + ')' : '') + '.', 'err');
           resolve(false);
+          return;
+        }catch(e){
+          // Odpověď dorazila, ale nešla přečíst (typicky právě CORS) —
+          // spadneme do "no-cors" pokusu níže.
         }
-      }catch(e){
-        clearTimeout(timeoutId);
-        const bareHost = host.replace(/^https?:\/\//i, '').replace(/\/+$/, '');
-        const msg = e && e.name === 'AbortError'
-          ? 'Tiskárna neodpověděla včas — zkontroluj, že je zapnutá a telefon je připojený na stejnou síť/Wi-Fi Direct.'
-          : 'Spojení s tiskárnou selhalo. Pokud jsi ještě v Safari nenavštívil https://' + bareHost + '/ ' +
-            'a nepotvrdil certifikát tiskárny, udělej to nejdřív (stačí jednou).';
-        report(msg, 'err');
-        resolve(false);
       }
+
+      // Druhý pokus: no-cors. Prohlížeč požadavek pošle, ale odpověď je
+      // "opaque" — nejde z ní nic přečíst (ani úspěch/chybu). Pokud fetch
+      // vůbec proběhne bez síťové chyby, je slušná šance, že tiskárna
+      // dokument dostala a vytiskla; jistotu ale appka nemá.
+      const fallback = await attempt('no-cors');
+      if(fallback.ok){
+        report(
+          isTest
+            ? 'Požadavek na tiskárnu odešel (bez potvrzení kvůli CORS) — zkontroluj, jestli něco vytiskla.'
+            : '⚠ Tisk odeslán, ale tiskárna potvrzení nevrátila (CORS). Zkontroluj výtisk.',
+          'ok'
+        );
+        resolve(true);
+        return;
+      }
+
+      const bareHost = host.replace(/^https?:\/\//i, '').replace(/\/+$/, '');
+      const msg = fallback.error && fallback.error.name === 'AbortError'
+        ? 'Tiskárna neodpověděla včas — zkontroluj, že je zapnutá a telefon je připojený na stejnou síť/Wi-Fi Direct.'
+        : 'Spojení s tiskárnou selhalo. Pokud jsi ještě v Safari nenavštívil https://' + bareHost + '/ ' +
+          'a nepotvrdil certifikát tiskárny, udělej to nejdřív (stačí jednou).';
+      report(msg, 'err');
+      resolve(false);
     });
   }
 
