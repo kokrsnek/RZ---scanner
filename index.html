@@ -1531,11 +1531,17 @@
     // Runs in parallel with plate recognition — no reason to make the person
     // wait twice for two separate network round-trips.
     const locationPromise = getLocationAndAddress();
-    // Zdarma lokální odhad barvy — běží souběžně, žádné volání ven.
-    const colorDetectPromise = detectDominantVehicleColor(fullShotDataUrl, plateBox);
-    // Google Vision Logo Detection — jen když je nastavený klíč, jinak se
-    // rovnou přeskočí (žádné volání, žádné zpoždění).
+    // Google Vision Logo Detection i Object Localization běží jen když je
+    // nastavený klíč — jinak se appka rovnou přeskočí, žádné volání navíc.
     const visionKey = getVisionApiToken();
+    const visionBoxPromise = (USE_VISION_COLOR_BOX && visionKey)
+      ? detectVehicleBoxViaGoogleVision(fullShotDataUrl, visionKey)
+      : Promise.resolve(null);
+    // Zdarma lokální odhad barvy — počká na Vision box (je-li k dispozici),
+    // aby mohl vzorkovat přímo z detekovaného vozidla místo fixního výřezu.
+    const colorDetectPromise = visionBoxPromise.then(
+      visionBox => detectDominantVehicleColor(fullShotDataUrl, plateBox, visionBox)
+    );
     const brandDetectPromise = visionKey
       ? detectVehicleBrandViaGoogleVision(fullShotDataUrl, visionKey)
       : Promise.resolve(null);
@@ -1845,7 +1851,7 @@
     return l < 0.28 ? 'Tmavě červená' : 'Červená';
   }
 
-  function detectDominantVehicleColor(dataUrl, plateBox){
+  function detectDominantVehicleColor(dataUrl, plateBox, visionBox){
     return new Promise((resolve)=>{
       const img = new Image();
       img.onload = ()=>{
@@ -1859,7 +1865,17 @@
           const counts = {};
 
           let x0, x1, y0, y1;
-          if(plateBox && plateBox.fullW && plateBox.fullH){
+          if(USE_VISION_COLOR_BOX && visionBox){
+            // Google Vision našel skutečný obdélník vozidla na celé fotce —
+            // vzorkujeme středovou část tohoto obdélníku (ne kraje, tam
+            // bývají kola, sklo nebo pozadí kolem vozidla).
+            const boxWf = visionBox.x1f - visionBox.x0f;
+            const boxHf = visionBox.y1f - visionBox.y0f;
+            x0 = Math.round(w * (visionBox.x0f + boxWf * 0.25));
+            x1 = Math.round(w * (visionBox.x0f + boxWf * 0.75));
+            y0 = Math.round(h * (visionBox.y0f + boxHf * 0.35));
+            y1 = Math.round(h * (visionBox.y0f + boxHf * 0.65));
+          } else if(plateBox && plateBox.fullW && plateBox.fullH){
             // Appka zná přesnou polohu žlutého rámečku z obrazovky kamery
             // (stejná oblast, kterou appka ořízne pro OCR). Celý rámeček
             // vzorkovat nešlo — bývá v něm mřížka, chrom, stíny i samotná
@@ -1911,6 +1927,52 @@
   // API klíč, appka pošle zmenšenou fotku na Google Cloud Vision a zkusí
   // najít logo výrobce (přední maska/znak). Bez nastaveného klíče se tohle
   // celé přeskočí — appka nikdy nevolá Vision bez klíče.
+
+  // Pokud by tohle nefungovalo lépe než stará metoda, stačí přepnout na
+  // false a appka se vrátí přesně k původnímu (fixní výřez nad SPZ) chování
+  // — zbytek kódu (detectDominantVehicleColor) na to reaguje sám, nic
+  // dalšího mazat/upravovat netřeba.
+  const USE_VISION_COLOR_BOX = true;
+
+  // Najde v celé fotce (ne jen v ořezu okolo SPZ) skutečný obdélník vozidla
+  // přes Google Vision Object Localization — má vlastní samostatnou
+  // bezplatnou kvótu 1000 použití/měsíc, nezávislou na Logo Detection.
+  // Vrací normalizovaný box (0–1) nebo null, pokud se nic vozidlu podobného
+  // nenašlo / appka nemá Vision klíč / volání selhalo — volající pak prostě
+  // spadne zpátky na starý fixní výřez.
+  async function detectVehicleBoxViaGoogleVision(dataUrl, apiKey){
+    try{
+      const resized = await preparePhotoForUpload(dataUrl, 1024, 0.8);
+      const base64 = resized.split(',')[1];
+      const res = await fetch('https://vision.googleapis.com/v1/images:annotate?key=' + encodeURIComponent(apiKey), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          requests: [{
+            image: { content: base64 },
+            features: [{ type: 'OBJECT_LOCALIZATION', maxResults: 10 }]
+          }]
+        })
+      });
+      if(!res.ok) return null;
+      const json = await res.json();
+      const objects = json.responses && json.responses[0] && json.responses[0].localizedObjectAnnotations;
+      if(!objects || !objects.length) return null;
+      const VEHICLE_NAMES = ['car', 'vehicle', 'van', 'truck', 'bus', 'motorcycle', 'land vehicle'];
+      const candidates = objects.filter(o => VEHICLE_NAMES.includes(String(o.name || '').toLowerCase()));
+      if(!candidates.length) return null;
+      const best = candidates.sort((a,b)=>(b.score||0)-(a.score||0))[0];
+      const verts = best.boundingPoly && best.boundingPoly.normalizedVertices;
+      if(!verts || verts.length < 4) return null;
+      const xs = verts.map(v => v.x || 0);
+      const ys = verts.map(v => v.y || 0);
+      return { x0f: Math.min(...xs), x1f: Math.max(...xs), y0f: Math.min(...ys), y1f: Math.max(...ys) };
+    }catch(e){
+      console.error('Google Vision Object Localization selhalo:', e);
+      return null;
+    }
+  }
+
   async function detectVehicleBrandViaGoogleVision(dataUrl, apiKey){
     try{
       const resized = await preparePhotoForUpload(dataUrl, 1024, 0.8);
